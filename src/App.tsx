@@ -34,7 +34,8 @@ export default function App() {
 
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, mode: 'translate' });
-  const [initialImgPos, setInitialImgPos] = useState({ x: 0, y: 0, rot: 0 });
+  const [initialImgPos, setInitialImgPos] = useState({ x: 0, y: 0, rot: 0, scale: 1 });
+  const [initialPinch, setInitialPinch] = useState<{ distance: number; angle: number } | null>(null);
 
   // GIF Export Settings
   const [holdTime, setHoldTime] = useState(1.0);
@@ -180,7 +181,8 @@ export default function App() {
     setInitialImgPos({ 
       x: activeImg.xFrac, 
       y: activeImg.yFrac,
-      rot: activeImg.rotation 
+      rot: activeImg.rotation,
+      scale: activeImg.scale
     });
   };
 
@@ -206,6 +208,81 @@ export default function App() {
 
   const handleEditorMouseUp = () => {
     setIsDraggingImage(false);
+  };
+
+  // Touch Handlers
+  const handleEditorTouchStart = (e: React.TouchEvent) => {
+    if (!activeId || activeId === refId) return;
+    setIsDraggingImage(true);
+
+    const activeImg = images.find((i) => i.id === activeId);
+    if (!activeImg) return;
+
+    if (e.touches.length === 1) {
+      setDragStart({
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        mode: 'translate'
+      });
+      setInitialImgPos({
+        x: activeImg.xFrac,
+        y: activeImg.yFrac,
+        rot: activeImg.rotation,
+        scale: activeImg.scale
+      });
+      setInitialPinch(null);
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      
+      setInitialPinch({ distance, angle });
+      setInitialImgPos({
+        x: activeImg.xFrac,
+        y: activeImg.yFrac,
+        rot: activeImg.rotation,
+        scale: activeImg.scale
+      });
+    }
+  };
+
+  const handleEditorTouchMove = (e: React.TouchEvent) => {
+    if (!isDraggingImage || !containerWidth) return;
+    // Don't prevent default if we want normal scrolling when not touching the canvas
+    // But since it's the editor, we probably want to prevent scroll while manipulating images
+    
+    const activeImg = images.find((i) => i.id === activeId);
+    if (!activeImg) return;
+
+    if (e.touches.length === 1 && dragStart.mode === 'translate') {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - dragStart.x;
+      const dy = e.touches[0].clientY - dragStart.y;
+      updateActiveImage({
+        xFrac: initialImgPos.x + dx / containerWidth,
+        yFrac: initialImgPos.y + dy / containerWidth,
+      });
+    } else if (e.touches.length === 2 && initialPinch) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+      const scaleChange = distance / initialPinch.distance;
+      const angleChange = angle - initialPinch.angle;
+
+      updateActiveImage({
+        scale: Math.max(0.1, Math.min(10, initialImgPos.scale * scaleChange)),
+        rotation: initialImgPos.rot + angleChange
+      });
+    }
+  };
+
+  const handleEditorTouchEnd = () => {
+    setIsDraggingImage(false);
+    setInitialPinch(null);
   };
 
   // Add mouse wheel scaling
@@ -392,7 +469,7 @@ export default function App() {
   const edgeB = parseInt(edgeColor.slice(5, 7), 16) / 255;
 
   return (
-    <div className="min-h-screen bg-stone-900 text-stone-100 flex flex-col md:flex-row font-sans">
+    <div className="min-h-[100dvh] bg-stone-900 text-stone-100 flex flex-col md:flex-row font-sans">
       <svg className="hidden">
         <filter id="edge-detect">
           <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
@@ -401,9 +478,9 @@ export default function App() {
         </filter>
       </svg>
 
-      <div className="w-full md:w-80 bg-stone-800 border-r border-stone-700 flex flex-col z-20">
+      <div className="w-full md:w-80 bg-stone-800 border-r border-stone-700 flex flex-col z-20 max-h-screen md:max-h-none overflow-y-auto">
         <div className="p-4 border-b border-stone-700">
-          <h1 className="text-xl font-bold mb-4 flex items-center gap-2">
+          <h1 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2">
             <ImageIcon className="text-emerald-500" />
             Timelapse Aligner
           </h1>
@@ -433,7 +510,7 @@ export default function App() {
                 <div className="flex gap-2 mt-1">
                   <button
                     onClick={() => setRefId(img.id)}
-                    className={`text-xs px-2 py-1 rounded ${
+                    className={`text-xs px-3 py-1.5 sm:px-2 sm:py-1 rounded font-medium ${
                       refId === img.id ? 'bg-blue-600 text-white' : 'bg-stone-700 hover:bg-stone-600'
                     }`}
                     title="Als fixes Referenzbild setzen"
@@ -442,8 +519,8 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => setActiveId(img.id)}
-                    className={`text-xs px-2 py-1 rounded ${
-                      activeId === img.id ? 'bg-emerald-600 text-white' : 'bg-stone-700 hover:bg-stone-600'
+                    className={`text-xs px-3 py-1.5 sm:px-2 sm:py-1 rounded font-medium ${
+                      activeId === img.id ? 'border-emerald-500 bg-emerald-600 text-white' : 'bg-stone-700 hover:bg-stone-600'
                     }`}
                     title="Zum Ausrichten auswählen"
                   >
@@ -611,18 +688,18 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col bg-stone-900 relative h-screen">
-        <div className="bg-stone-800 p-4 flex flex-wrap gap-6 items-center border-b border-stone-700 shadow-md z-10">
+      <div className="flex-1 flex flex-col bg-stone-900 relative h-[100dvh]">
+        <div className="bg-stone-800 p-4 flex flex-wrap gap-4 items-center border-b border-stone-700 shadow-md z-10 sticky top-0 md:relative">
           <div className="flex items-center gap-2">
-            <Eye className="text-stone-400" size={18} />
-            <span className="text-sm font-medium">Overlay Deckkraft:</span>
+            <Eye className="text-stone-400 flex-shrink-0" size={18} />
+            <span className="text-sm font-medium hidden sm:inline">Overlay Deckkraft:</span>
             <input
               type="range"
               min="0"
               max="100"
               value={opacity}
               onChange={(e) => setOpacity(Number(e.target.value))}
-              className="w-32 accent-emerald-500"
+              className="w-24 sm:w-32 accent-emerald-500"
             />
             <span className="text-xs text-stone-400 w-8">{opacity}%</span>
           </div>
@@ -634,7 +711,8 @@ export default function App() {
               onChange={(e) => setEdgeMode(e.target.checked)}
               className="rounded bg-stone-700 border-stone-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-stone-800"
             />
-            Kantenerkennung
+            <span className="hidden xs:inline">Kantenerkennung</span>
+            <span className="xs:hidden">Kanten</span>
           </label>
 
           {edgeMode && (
@@ -649,10 +727,10 @@ export default function App() {
 
           {activeImage && activeId !== refId && (
             <>
-              <div className="h-6 w-px bg-stone-700 mx-2"></div>
+              <div className="h-6 w-px bg-stone-700 mx-1 hidden sm:block"></div>
               <div className="flex items-center gap-2">
-                <Settings2 className="text-stone-400" size={18} />
-                <span className="text-sm font-medium">Skalierung:</span>
+                <Settings2 className="text-stone-400 flex-shrink-0" size={18} />
+                <span className="text-sm font-medium hidden lg:inline">Skalierung:</span>
                 <input
                   type="range"
                   min="0.1"
@@ -660,22 +738,20 @@ export default function App() {
                   step="0.01"
                   value={activeImage.scale}
                   onChange={(e) => updateActiveImage({ scale: parseFloat(e.target.value) })}
-                  className="w-24 accent-emerald-500"
+                  className="w-20 sm:w-24 accent-emerald-500"
                 />
-                <span className="text-xs text-stone-400 w-8">{activeImage.scale.toFixed(2)}x</span>
               </div>
               <div className="flex items-center gap-2">
-                <RotateCwIcon size={18} />
-                <span className="text-sm font-medium">Rotation:</span>
+                <RotateCwIcon size={18} className="text-stone-400 flex-shrink-0" />
+                <span className="text-sm font-medium hidden lg:inline">Rotation:</span>
                 <input
                   type="range"
                   min="-180"
                   max="180"
                   value={activeImage.rotation}
                   onChange={(e) => updateActiveImage({ rotation: parseFloat(e.target.value) })}
-                  className="w-24 accent-emerald-500"
+                  className="w-20 sm:w-24 accent-emerald-500"
                 />
-                <span className="text-xs text-stone-400 w-8">{activeImage.rotation}°</span>
               </div>
             </>
           )}
@@ -683,7 +759,7 @@ export default function App() {
 
         <div className="flex-1 overflow-auto p-4 flex justify-center items-center bg-stone-950">
           {!refImage ? (
-            <div className="text-stone-500 flex flex-col items-center gap-2">
+            <div className="text-stone-500 flex flex-col items-center gap-2 text-center">
               <ImageIcon size={48} className="opacity-20" />
               <p>Lade Bilder hoch und setze ein fixes Bild.</p>
             </div>
@@ -694,13 +770,17 @@ export default function App() {
               style={{
                 width: '100%',
                 maxWidth: '800px',
-                height: containerWidth ? containerWidth * containerAspect : '400px'
+                height: containerWidth ? containerWidth * containerAspect : '400px',
+                touchAction: 'none' // Prevent scrolling while touching the canvas
               }}
               onMouseDown={handleEditorMouseDown}
               onMouseMove={handleEditorMouseMove}
               onMouseUp={handleEditorMouseUp}
               onMouseLeave={handleEditorMouseUp}
               onWheel={handleEditorWheel}
+              onTouchStart={handleEditorTouchStart}
+              onTouchMove={handleEditorTouchMove}
+              onTouchEnd={handleEditorTouchEnd}
               onContextMenu={(e) => e.preventDefault()}
             >
               {activeImage && (
@@ -749,10 +829,10 @@ export default function App() {
               )}
               
               {activeId && activeId !== refId && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-5 py-2 rounded-full text-xs pointer-events-none flex items-center gap-4 backdrop-blur-sm shadow-lg whitespace-nowrap">
-                  <span className="flex items-center gap-1"><Move size={14} className="text-emerald-400" /> Verschieben (Linksklick)</span>
-                  <span className="flex items-center gap-1"><RotateCwIcon size={14} className="text-emerald-400" /> Rotieren (Rechtsklick)</span>
-                  <span className="flex items-center gap-1"><Settings2 size={14} className="text-emerald-400" /> Skalieren (Mausrad)</span>
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-5 py-2 rounded-full text-[10px] sm:text-xs pointer-events-none flex items-center gap-3 sm:gap-4 backdrop-blur-sm shadow-lg whitespace-nowrap overflow-x-auto max-w-[95%]">
+                  <span className="flex items-center gap-1 shrink-0"><Move size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Bewegen</span><span className="xs:hidden">Drag</span></span>
+                  <span className="flex items-center gap-1 shrink-0"><RotateCwIcon size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Rotieren</span><span className="xs:hidden">Rotate</span></span>
+                  <span className="flex items-center gap-1 shrink-0"><Settings2 size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Skalieren</span><span className="xs:hidden">Scale</span></span>
                 </div>
               )}
             </div>
