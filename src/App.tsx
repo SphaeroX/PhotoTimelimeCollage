@@ -42,6 +42,29 @@ export default function App() {
   const [fadeTime, setFadeTime] = useState(0.5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [gifQuality, setGifQuality] = useState(6); // 1-10 scale
+  const [gifResolution, setGifResolution] = useState(0.5); // 0.1 - 1.0
+
+  // Calculate estimated GIF size in MB
+  const getEstimatedSize = () => {
+    if (images.length === 0 || !refId) return 0;
+    const refImgData = images.find((i) => i.id === refId);
+    if (!refImgData) return 0;
+
+    const fps = 10;
+    const framesCountHold = Math.max(1, Math.round(holdTime * fps));
+    const framesCountFade = enableFading ? Math.max(1, Math.round(fadeTime * fps)) : 0;
+    const totalFrames = images.length * framesCountHold + (images.length - 1) * framesCountFade;
+
+    const outWidth = Math.floor(refImgData.width * gifResolution);
+    const outHeight = Math.floor(refImgData.height * gifResolution);
+    
+    // GIF estimation: roughly 0.15 bytes per pixel per frame (very rough heuristic)
+    // Higher quality (lower sampleInterval) tends to be larger
+    const qualityMultiplier = 0.1 + (gifQuality / 10) * 0.2;
+    const sizeBytes = (outWidth * outHeight * totalFrames) * qualityMultiplier;
+    return sizeBytes / (1024 * 1024);
+  };
 
   // Load gifshot library dynamically
   useEffect(() => {
@@ -256,11 +279,9 @@ export default function App() {
     const refImgData = images.find((i) => i.id === refId);
     if (!refImgData) return;
     
-    // Scale down output to prevent browser crashes and huge file sizes
-    const maxSize = 800;
-    const renderScale = Math.min(1, maxSize / Math.max(refImgData.width, refImgData.height));
-    const outWidth = Math.floor(refImgData.width * renderScale);
-    const outHeight = Math.floor(refImgData.height * renderScale);
+    // Use user-defined resolution scale
+    const outWidth = Math.floor(refImgData.width * gifResolution);
+    const outHeight = Math.floor(refImgData.height * gifResolution);
 
     const canvas = document.createElement('canvas');
     canvas.width = outWidth;
@@ -288,15 +309,15 @@ export default function App() {
       const slotCenterY = outHeight / 2;
 
       // Ensure consistent logic with editor scaling
-      const realX = imgData.xFrac * refImgData.width * renderScale;
-      const realY = imgData.yFrac * refImgData.width * renderScale; 
+      const realX = imgData.xFrac * refImgData.width * gifResolution;
+      const realY = imgData.yFrac * refImgData.width * gifResolution; 
 
       ctx.translate(slotCenterX + realX, slotCenterY + realY);
       ctx.rotate((imgData.rotation * Math.PI) / 180);
       ctx.scale(imgData.scale, imgData.scale);
 
-      const drawW = imgData.width * renderScale;
-      const drawH = imgData.height * renderScale;
+      const drawW = imgData.width * gifResolution;
+      const drawH = imgData.height * gifResolution;
 
       ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
       ctx.restore();
@@ -308,6 +329,9 @@ export default function App() {
     
     const frames: string[] = [];
 
+    // Map 1-10 quality to 0.5-1.0 JPEG quality
+    const jpegQuality = 0.5 + (gifQuality / 10) * 0.5;
+
     // Generate all frames by drawing on canvas
     for (let i = 0; i < images.length; i++) {
       // Hold phase
@@ -315,7 +339,7 @@ export default function App() {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, outWidth, outHeight);
         drawImageScaled(i, 1);
-        frames.push(canvas.toDataURL('image/jpeg', 0.8));
+        frames.push(canvas.toDataURL('image/jpeg', jpegQuality));
       }
 
       // Fade phase to next image
@@ -325,10 +349,14 @@ export default function App() {
           ctx.fillRect(0, 0, outWidth, outHeight);
           drawImageScaled(i, 1);
           drawImageScaled(i + 1, f / framesCountFade);
-          frames.push(canvas.toDataURL('image/jpeg', 0.8));
+          frames.push(canvas.toDataURL('image/jpeg', jpegQuality));
         }
       }
     }
+
+    // gifshot quality: sampleInterval (lower is better, default is 10)
+    // Map 1-10 quality to 20-2 sampleInterval
+    const sampleInterval = 22 - (gifQuality * 2);
 
     // Pass frames to gifshot
     window.gifshot.createGIF({
@@ -337,6 +365,7 @@ export default function App() {
       images: frames,
       interval: 1 / fps,
       numFrames: frames.length,
+      sampleInterval: sampleInterval,
       progressCallback: (captureProgress: number) => setProgress(captureProgress)
     }, function(obj: any) {
       if(!obj.error) {
@@ -508,6 +537,54 @@ export default function App() {
                 />
               </div>
             )}
+          </div>
+
+          <div className="space-y-4 pt-2 border-t border-stone-700/50">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-stone-400 flex justify-between">
+                <span>Auflösung</span>
+                <span>{Math.round(gifResolution * 100)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0.1"
+                max="1.0"
+                step="0.1"
+                value={gifResolution}
+                onChange={(e) => setGifResolution(parseFloat(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-stone-400 flex justify-between">
+                <span>Qualität (Farben)</span>
+                <span>{gifQuality} / 10</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                value={gifQuality}
+                onChange={(e) => setGifQuality(parseInt(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+            </div>
+
+            <div className="bg-stone-900/50 p-2 rounded border border-stone-700/50">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-400">Geschätzte Größe:</span>
+                <span className={`font-mono ${getEstimatedSize() > 50 ? 'text-orange-400' : 'text-blue-400'}`}>
+                  ~{getEstimatedSize().toFixed(1)} MB
+                </span>
+              </div>
+              {getEstimatedSize() > 50 && (
+                <p className="text-[10px] text-orange-500 mt-1 leading-tight">
+                  Achtung: Große GIFs können den Browser verlangsamen.
+                </p>
+              )}
+            </div>
           </div>
 
           <button
