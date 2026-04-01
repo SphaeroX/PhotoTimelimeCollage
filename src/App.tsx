@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Download, X, GripVertical, Settings2, Eye } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -11,6 +11,12 @@ interface ImageItem {
   yFrac: number;
   scale: number;
   rotation: number;
+}
+
+declare global {
+  interface Window {
+    gifshot: any;
+  }
 }
 
 export default function App() {
@@ -29,6 +35,22 @@ export default function App() {
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, mode: 'translate' });
   const [initialImgPos, setInitialImgPos] = useState({ x: 0, y: 0, rot: 0 });
+
+  // GIF Export Settings
+  const [holdTime, setHoldTime] = useState(1.0);
+  const [enableFading, setEnableFading] = useState(true);
+  const [fadeTime, setFadeTime] = useState(0.5);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  // Load gifshot library dynamically
+  useEffect(() => {
+    if (!window.gifshot) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js';
+      document.body.appendChild(script);
+    }
+  }, []);
 
   // Update container width on window resize
   useEffect(() => {
@@ -102,11 +124,27 @@ export default function App() {
     );
   };
 
+  const resetAllTransformations = () => {
+    setImages((prev) => 
+      prev.map((img) => ({
+        ...img,
+        xFrac: 0,
+        yFrac: 0,
+        scale: 1,
+        rotation: 0
+      }))
+    );
+  };
+
+  // Setup drag and rotation modes on mouse down
   const handleEditorMouseDown = (e: React.MouseEvent) => {
     if (!activeId || activeId === refId) return;
+    
+    // 0 = Left click, 2 = Right click
     if (e.button !== 0 && e.button !== 2) return;
     
     setIsDraggingImage(true);
+    
     const activeImg = images.find((i) => i.id === activeId);
     if (!activeImg) return;
     
@@ -123,6 +161,7 @@ export default function App() {
     });
   };
 
+  // Handle translation or rotation based on mode
   const handleEditorMouseMove = (e: React.MouseEvent) => {
     if (!isDraggingImage || !containerWidth) return;
     
@@ -130,6 +169,7 @@ export default function App() {
     const dy = e.clientY - dragStart.y;
     
     if (dragStart.mode === 'rotate') {
+      // 0.5 acts as rotation sensitivity modifier
       updateActiveImage({
         rotation: initialImgPos.rot + (dy * 0.5)
       });
@@ -145,12 +185,14 @@ export default function App() {
     setIsDraggingImage(false);
   };
 
+  // Add mouse wheel scaling
   const handleEditorWheel = (e: React.WheelEvent) => {
     if (!activeId || activeId === refId) return;
     
     const activeImg = images.find((i) => i.id === activeId);
     if (!activeImg) return;
     
+    // Determine scale direction
     const scaleDelta = e.deltaY > 0 ? -0.05 : 0.05;
     const newScale = Math.max(0.1, Math.min(10, activeImg.scale + scaleDelta));
     
@@ -183,6 +225,7 @@ export default function App() {
       const slotCenterX = i * refImgData.width + refImgData.width / 2;
       const slotCenterY = refImgData.height / 2;
 
+      // Ensure consistent logic with editor scaling
       const realX = imgData.xFrac * refImgData.width;
       const realY = imgData.yFrac * refImgData.width; 
 
@@ -200,11 +243,121 @@ export default function App() {
     link.click();
   };
 
+  const generateGIF = async () => {
+    if (images.length === 0 || !refId) return;
+    if (!window.gifshot) {
+      alert("GIF Encoder wird noch geladen. Bitte versuche es in wenigen Sekunden erneut.");
+      return;
+    }
+
+    setIsGenerating(true);
+    setProgress(0);
+
+    const refImgData = images.find((i) => i.id === refId);
+    if (!refImgData) return;
+    
+    // Scale down output to prevent browser crashes and huge file sizes
+    const maxSize = 800;
+    const renderScale = Math.min(1, maxSize / Math.max(refImgData.width, refImgData.height));
+    const outWidth = Math.floor(refImgData.width * renderScale);
+    const outHeight = Math.floor(refImgData.height * renderScale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = outWidth;
+    canvas.height = outHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const loadImg = (src: string): Promise<HTMLImageElement> =>
+      new Promise((res) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => res(img);
+      });
+
+    const loadedImages = await Promise.all(images.map(img => loadImg(img.url)));
+
+    const drawImageScaled = (imgIdx: number, alpha = 1) => {
+      const imgData = images[imgIdx];
+      const img = loadedImages[imgIdx];
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      
+      const slotCenterX = outWidth / 2;
+      const slotCenterY = outHeight / 2;
+
+      // Ensure consistent logic with editor scaling
+      const realX = imgData.xFrac * refImgData.width * renderScale;
+      const realY = imgData.yFrac * refImgData.width * renderScale; 
+
+      ctx.translate(slotCenterX + realX, slotCenterY + realY);
+      ctx.rotate((imgData.rotation * Math.PI) / 180);
+      ctx.scale(imgData.scale, imgData.scale);
+
+      const drawW = imgData.width * renderScale;
+      const drawH = imgData.height * renderScale;
+
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+      ctx.restore();
+    };
+
+    const fps = 10;
+    const framesCountHold = Math.max(1, Math.round(holdTime * fps));
+    const framesCountFade = enableFading ? Math.max(1, Math.round(fadeTime * fps)) : 0;
+    
+    const frames: string[] = [];
+
+    // Generate all frames by drawing on canvas
+    for (let i = 0; i < images.length; i++) {
+      // Hold phase
+      for (let h = 0; h < framesCountHold; h++) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, outWidth, outHeight);
+        drawImageScaled(i, 1);
+        frames.push(canvas.toDataURL('image/jpeg', 0.8));
+      }
+
+      // Fade phase to next image
+      if (enableFading && i < images.length - 1) {
+        for (let f = 1; f <= framesCountFade; f++) {
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, outWidth, outHeight);
+          drawImageScaled(i, 1);
+          drawImageScaled(i + 1, f / framesCountFade);
+          frames.push(canvas.toDataURL('image/jpeg', 0.8));
+        }
+      }
+    }
+
+    // Pass frames to gifshot
+    window.gifshot.createGIF({
+      gifWidth: outWidth,
+      gifHeight: outHeight,
+      images: frames,
+      interval: 1 / fps,
+      numFrames: frames.length,
+      progressCallback: (captureProgress: number) => setProgress(captureProgress)
+    }, function(obj: any) {
+      if(!obj.error) {
+        const link = document.createElement('a');
+        link.download = 'timelapse.gif';
+        link.href = obj.image;
+        link.click();
+      } else {
+        alert("Ein Fehler ist bei der GIF Generierung aufgetreten.");
+      }
+      setIsGenerating(false);
+      setProgress(0);
+    });
+  };
+
   const refImage = images.find((i) => i.id === refId);
   const activeImage = images.find((i) => i.id === activeId);
 
   const containerAspect = refImage ? refImage.height / refImage.width : 1;
 
+  // Convert hex color to rgb ratios for the SVG filter
   const edgeR = parseInt(edgeColor.slice(1, 3), 16) / 255;
   const edgeG = parseInt(edgeColor.slice(3, 5), 16) / 255;
   const edgeB = parseInt(edgeColor.slice(5, 7), 16) / 255;
@@ -219,11 +372,11 @@ export default function App() {
         </filter>
       </svg>
 
-      <div className="w-full md:w-80 bg-stone-800 border-r border-stone-700 flex flex-col">
+      <div className="w-full md:w-80 bg-stone-800 border-r border-stone-700 flex flex-col z-20">
         <div className="p-4 border-b border-stone-700">
           <h1 className="text-xl font-bold mb-4 flex items-center gap-2">
             <ImageIcon className="text-emerald-500" />
-            Collage Aligner
+            Timelapse Aligner
           </h1>
           <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors w-full font-medium">
             <Upload size={20} />
@@ -274,16 +427,109 @@ export default function App() {
               </button>
             </div>
           ))}
+          
+          {images.length > 0 && (
+            <button
+              onClick={resetAllTransformations}
+              className="w-full mt-2 bg-stone-700 hover:bg-stone-600 text-stone-200 p-2 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm"
+              title="Reset all positions, rotations and scaling"
+            >
+              <RefreshCcw size={16} />
+              Alle zurücksetzen
+            </button>
+          )}
         </div>
 
-        <div className="p-4 border-t border-stone-700">
+        <div className="p-4 border-t border-stone-700 flex flex-col gap-4 bg-stone-850 overflow-y-auto max-h-[50vh]">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-stone-300">
+              <Layout size={18} className="text-emerald-400" />
+              <h3 className="font-semibold text-sm">Collage Export</h3>
+            </div>
+            
+            <button
+              onClick={generateCollage}
+              disabled={images.length < 2 || !refId}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium text-sm"
+            >
+              <Download size={18} />
+              Collage speichern
+            </button>
+          </div>
+
+          <div className="h-px w-full bg-stone-700 my-1"></div>
+
+          <div className="flex items-center gap-2 text-stone-300">
+            <Film size={18} className="text-blue-400" />
+            <h3 className="font-semibold text-sm">GIF Export</h3>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-stone-400 flex justify-between">
+                <span>Anzeigedauer pro Bild</span>
+                <span>{holdTime.toFixed(1)}s</span>
+              </label>
+              <input
+                type="range"
+                min="0.1"
+                max="3.0"
+                step="0.1"
+                value={holdTime}
+                onChange={(e) => setHoldTime(parseFloat(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors">
+              <input
+                type="checkbox"
+                checked={enableFading}
+                onChange={(e) => setEnableFading(e.target.checked)}
+                className="rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800"
+              />
+              Fading aktivieren
+            </label>
+
+            {enableFading && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-stone-400 flex justify-between">
+                  <span>Fading Dauer</span>
+                  <span>{fadeTime.toFixed(1)}s</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="2.0"
+                  step="0.1"
+                  value={fadeTime}
+                  onChange={(e) => setFadeTime(parseFloat(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+              </div>
+            )}
+          </div>
+
           <button
-            onClick={generateCollage}
-            disabled={images.length < 2 || !refId}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium"
+            onClick={generateGIF}
+            disabled={images.length < 2 || !refId || isGenerating}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium relative overflow-hidden text-sm"
           >
-            <Download size={20} />
-            Collage erstellen
+            {isGenerating ? (
+              <>
+                <div 
+                  className="absolute left-0 top-0 bottom-0 bg-blue-500 opacity-50 transition-all duration-300"
+                  style={{ width: `${progress * 100}%` }}
+                ></div>
+                <Loader2 size={20} className="animate-spin relative z-10" />
+                <span className="relative z-10">Generiere... {Math.round(progress * 100)}%</span>
+              </>
+            ) : (
+              <>
+                <Download size={20} />
+                GIF speichern
+              </>
+            )}
           </button>
         </div>
       </div>
