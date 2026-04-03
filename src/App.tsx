@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -13,6 +13,17 @@ interface ImageItem {
   rotation: number;
 }
 
+const ASPECT_RATIOS = [
+  { label: 'Original', value: 'original' },
+  { label: '1:1 Quadrat', value: '1:1' },
+  { label: '4:3', value: '4:3' },
+  { label: '3:4', value: '3:4' },
+  { label: '16:9', value: '16:9' },
+  { label: '9:16', value: '9:16' },
+  { label: '3:2', value: '3:2' },
+  { label: '2:3', value: '2:3' },
+];
+
 declare global {
   interface Window {
     gifshot: any;
@@ -24,7 +35,9 @@ export default function App() {
   const [refId, setRefId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   
+  const [aspectRatio, setAspectRatio] = useState('original');
   const [opacity, setOpacity] = useState(50);
+// ... rest of the file ...
   const [edgeMode, setEdgeMode] = useState(false);
   const [edgeColor, setEdgeColor] = useState('#ffffff');
   
@@ -143,9 +156,49 @@ export default function App() {
   };
 
   const updateActiveImage = (updates: Partial<ImageItem>) => {
-    setImages((prev) =>
-      prev.map((img) => (img.id === activeId ? { ...img, ...updates } : img))
-    );
+    setImages((prev) => {
+      const activeImg = prev.find((i) => i.id === activeId);
+      if (!activeImg) return prev;
+
+      const isRef = activeId === refId;
+
+      return prev.map((img) => {
+        if (img.id === activeId) {
+          return { ...img, ...updates };
+        }
+        
+        // If we move/scale/rotate the reference image, we move everything else too
+        // to maintain alignment (the "global crop" effect)
+        if (isRef) {
+          const newImg = { ...img };
+          if (updates.xFrac !== undefined) {
+            newImg.xFrac += (updates.xFrac - activeImg.xFrac);
+          }
+          if (updates.yFrac !== undefined) {
+            newImg.yFrac += (updates.yFrac - activeImg.yFrac);
+          }
+          if (updates.scale !== undefined) {
+            // Feature-consistent scaling from center
+            const scaleRatio = updates.scale / activeImg.scale;
+            newImg.scale *= scaleRatio;
+            newImg.xFrac *= scaleRatio;
+            newImg.yFrac *= scaleRatio;
+          }
+          if (updates.rotation !== undefined) {
+            newImg.rotation += (updates.rotation - activeImg.rotation);
+          }
+          return newImg;
+        }
+        return img;
+      });
+    });
+  };
+
+  const getAspectRatioValue = () => {
+    const found = ASPECT_RATIOS.find(r => r.value === aspectRatio);
+    if (!found || found.value === 'original') return null;
+    const [w, h] = found.value.split(':').map(Number);
+    return w / h;
   };
 
   const resetAllTransformations = () => {
@@ -162,7 +215,7 @@ export default function App() {
 
   // Setup drag and rotation modes on mouse down
   const handleEditorMouseDown = (e: React.MouseEvent) => {
-    if (!activeId || activeId === refId) return;
+    if (!activeId) return;
     
     // 0 = Left click, 2 = Right click
     if (e.button !== 0 && e.button !== 2) return;
@@ -212,7 +265,7 @@ export default function App() {
 
   // Touch Handlers
   const handleEditorTouchStart = (e: React.TouchEvent) => {
-    if (!activeId || activeId === refId) return;
+    if (!activeId) return;
     setIsDraggingImage(true);
 
     const activeImg = images.find((i) => i.id === activeId);
@@ -287,7 +340,7 @@ export default function App() {
 
   // Add mouse wheel scaling
   const handleEditorWheel = (e: React.WheelEvent) => {
-    if (!activeId || activeId === refId) return;
+    if (!activeId) return;
     
     const activeImg = images.find((i) => i.id === activeId);
     if (!activeImg) return;
@@ -304,9 +357,13 @@ export default function App() {
     const refImgData = images.find((i) => i.id === refId);
     if (!refImgData) return;
 
+    const targetRatio = getAspectRatioValue();
+    const outWidth = refImgData.width;
+    const outHeight = targetRatio ? outWidth / targetRatio : refImgData.height;
+
     const canvas = document.createElement('canvas');
-    canvas.width = refImgData.width * images.length;
-    canvas.height = refImgData.height;
+    canvas.width = outWidth * images.length;
+    canvas.height = outHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -322,12 +379,12 @@ export default function App() {
       const img = await loadImg(imgData.url);
 
       ctx.save();
-      const slotCenterX = i * refImgData.width + refImgData.width / 2;
-      const slotCenterY = refImgData.height / 2;
+      const slotCenterX = i * outWidth + outWidth / 2;
+      const slotCenterY = outHeight / 2;
 
       // Ensure consistent logic with editor scaling
-      const realX = imgData.xFrac * refImgData.width;
-      const realY = imgData.yFrac * refImgData.width; 
+      const realX = imgData.xFrac * outWidth;
+      const realY = imgData.yFrac * outWidth; 
 
       ctx.translate(slotCenterX + realX, slotCenterY + realY);
       ctx.rotate((imgData.rotation * Math.PI) / 180);
@@ -356,9 +413,10 @@ export default function App() {
     const refImgData = images.find((i) => i.id === refId);
     if (!refImgData) return;
     
-    // Use user-defined resolution scale
-    const outWidth = Math.floor(refImgData.width * gifResolution);
-    const outHeight = Math.floor(refImgData.height * gifResolution);
+    const targetRatio = getAspectRatioValue();
+    const baseWidth = refImgData.width * gifResolution;
+    const outWidth = Math.floor(baseWidth);
+    const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * gifResolution);
 
     const canvas = document.createElement('canvas');
     canvas.width = outWidth;
@@ -386,15 +444,15 @@ export default function App() {
       const slotCenterY = outHeight / 2;
 
       // Ensure consistent logic with editor scaling
-      const realX = imgData.xFrac * refImgData.width * gifResolution;
-      const realY = imgData.yFrac * refImgData.width * gifResolution; 
+      const realX = imgData.xFrac * outWidth;
+      const realY = imgData.yFrac * outWidth; 
 
       ctx.translate(slotCenterX + realX, slotCenterY + realY);
       ctx.rotate((imgData.rotation * Math.PI) / 180);
-      ctx.scale(imgData.scale, imgData.scale);
+      ctx.scale(imgData.scale * gifResolution, imgData.scale * gifResolution);
 
-      const drawW = imgData.width * gifResolution;
-      const drawH = imgData.height * gifResolution;
+      const drawW = imgData.width;
+      const drawH = imgData.height;
 
       ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
       ctx.restore();
@@ -461,7 +519,8 @@ export default function App() {
   const refImage = images.find((i) => i.id === refId);
   const activeImage = images.find((i) => i.id === activeId);
 
-  const containerAspect = refImage ? refImage.height / refImage.width : 1;
+  const targetRatio = getAspectRatioValue();
+  const containerAspect = targetRatio ? 1 / targetRatio : (refImage ? refImage.height / refImage.width : 1);
 
   // Convert hex color to rgb ratios for the SVG filter
   const edgeR = parseInt(edgeColor.slice(1, 3), 16) / 255;
@@ -547,6 +606,30 @@ export default function App() {
         </div>
 
         <div className="p-4 border-t border-stone-700 flex flex-col gap-4 bg-stone-850 overflow-y-auto max-h-[50vh]">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-stone-300">
+              <Crop size={18} className="text-emerald-400" />
+              <h3 className="font-semibold text-sm">Leinwand & Format</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {ASPECT_RATIOS.map((ratio) => (
+                <button
+                  key={ratio.value}
+                  onClick={() => setAspectRatio(ratio.value)}
+                  className={`text-[10px] px-2 py-1.5 rounded border transition-colors ${
+                    aspectRatio === ratio.value 
+                      ? 'bg-emerald-600 border-emerald-500 text-white' 
+                      : 'bg-stone-800 border-stone-700 text-stone-400 hover:border-stone-500'
+                  }`}
+                >
+                  {ratio.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-px w-full bg-stone-700 my-1"></div>
+
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-stone-300">
               <Layout size={18} className="text-emerald-400" />
@@ -725,7 +808,7 @@ export default function App() {
             />
           )}
 
-          {activeImage && activeId !== refId && (
+          {activeImage && (
             <>
               <div className="h-6 w-px bg-stone-700 mx-1 hidden sm:block"></div>
               <div className="flex items-center gap-2">
@@ -788,7 +871,7 @@ export default function App() {
                   src={activeImage.url}
                   alt="Active"
                   draggable="false"
-                  className={`absolute origin-center max-w-none max-h-none ${activeId !== refId ? 'cursor-move' : ''}`}
+                  className={`absolute origin-center max-w-none max-h-none cursor-move ${activeId === refId ? 'z-10' : 'z-20'}`}
                   style={{
                     width: `${activeImage.width * (containerWidth / refImage.width)}px`,
                     height: `${activeImage.height * (containerWidth / refImage.width)}px`,
@@ -799,7 +882,10 @@ export default function App() {
                       translate(${activeImage.xFrac * containerWidth}px, ${activeImage.yFrac * containerWidth}px) 
                       scale(${activeImage.scale}) 
                       rotate(${activeImage.rotation}deg)
-                    `
+                    `,
+                    // Hide the active image if it is the ref image to avoid double rendering with filter/opacity
+                    opacity: activeId === refId ? 0 : 1,
+                    pointerEvents: activeId === refId ? 'none' : 'auto'
                   }}
                 />
               )}
@@ -809,7 +895,7 @@ export default function App() {
                   src={refImage.url}
                   alt="Reference"
                   draggable="false"
-                  className="absolute origin-center max-w-none max-h-none pointer-events-none"
+                  className={`absolute origin-center max-w-none max-h-none ${activeId === refId ? 'cursor-move' : 'pointer-events-none'}`}
                   style={{ 
                     width: `${refImage.width * (containerWidth / refImage.width)}px`,
                     height: `${refImage.height * (containerWidth / refImage.width)}px`,
@@ -821,14 +907,15 @@ export default function App() {
                       scale(${refImage.scale}) 
                       rotate(${refImage.rotation}deg)
                     `,
-                    opacity: opacity / 100,
+                    opacity: activeId === refId ? 1 : opacity / 100,
                     filter: edgeMode ? 'url(#edge-detect)' : 'none',
-                    mixBlendMode: 'normal'
+                    mixBlendMode: 'normal',
+                    zIndex: 15
                   }}
                 />
               )}
               
-              {activeId && activeId !== refId && (
+              {activeId && (
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-5 py-2 rounded-full text-[10px] sm:text-xs pointer-events-none flex items-center gap-3 sm:gap-4 backdrop-blur-sm shadow-lg whitespace-nowrap overflow-x-auto max-w-[95%]">
                   <span className="flex items-center gap-1 shrink-0"><Move size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Bewegen</span><span className="xs:hidden">Drag</span></span>
                   <span className="flex items-center gap-1 shrink-0"><RotateCwIcon size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Rotieren</span><span className="xs:hidden">Rotate</span></span>
