@@ -78,9 +78,22 @@ export default function App() {
     const outHeight = Math.floor(refImgData.height * gifResolution);
     
     // GIF estimation: roughly 0.15 bytes per pixel per frame (very rough heuristic)
-    // Higher quality (lower sampleInterval) tends to be larger
     const qualityMultiplier = 0.1 + (gifQuality / 10) * 0.2;
     const sizeBytes = (outWidth * outHeight * totalFrames) * qualityMultiplier;
+    return sizeBytes / (1024 * 1024);
+  };
+
+  const getEstimatedCollageSize = () => {
+    if (images.length === 0 || !refId) return 0;
+    const refImgData = images.find((i) => i.id === refId);
+    if (!refImgData) return 0;
+
+    const outWidth = Math.floor(refImgData.width * gifResolution);
+    const targetRatio = getAspectRatioValue();
+    const outHeight = Math.floor(targetRatio ? outWidth / targetRatio : refImgData.height * gifResolution);
+    
+    // PNG estimation: roughly 0.3 bytes per pixel (very rough heuristic)
+    const sizeBytes = (outWidth * outHeight * images.length) * 0.3;
     return sizeBytes / (1024 * 1024);
   };
 
@@ -505,8 +518,9 @@ export default function App() {
     if (!refImgData) return;
 
     const targetRatio = getAspectRatioValue();
-    const outWidth = refImgData.width;
-    const outHeight = targetRatio ? outWidth / targetRatio : refImgData.height;
+    const baseWidth = refImgData.width * gifResolution;
+    const outWidth = Math.floor(baseWidth);
+    const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * gifResolution);
 
     const canvas = document.createElement('canvas');
     canvas.width = outWidth * images.length;
@@ -572,15 +586,19 @@ export default function App() {
 
       ctx.translate(slotCenterX + realX, slotCenterY + realY);
       ctx.rotate((imgData.rotation * Math.PI) / 180);
-      ctx.scale(imgData.scale, imgData.scale);
+      ctx.scale(imgData.scale * gifResolution, imgData.scale * gifResolution);
 
-      ctx.drawImage(img, -imgData.width / 2, -imgData.height / 2);
+      const drawW = imgData.width;
+      const drawH = imgData.height;
+
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
       ctx.restore();
     }
 
+    const jpegQuality = 0.5 + (gifQuality / 10) * 0.5;
     const link = document.createElement('a');
-    link.download = 'timelapse-collage.png';
-    link.href = canvas.toDataURL('image/png');
+    link.download = 'timelapse-collage.jpg';
+    link.href = canvas.toDataURL('image/jpeg', jpegQuality);
     link.click();
   };
 
@@ -849,12 +867,62 @@ export default function App() {
 
           <div className="h-px w-full bg-stone-700 my-1"></div>
 
+          <div className="flex items-center gap-2 text-stone-300">
+            <Settings2 size={18} className="text-emerald-400" />
+            <h3 className="font-semibold text-sm">Export-Einstellungen</h3>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-stone-400 flex justify-between">
+                <span>Auflösung (Skalierung)</span>
+                <span>{Math.round(gifResolution * 100)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0.1"
+                max="1.0"
+                step="0.1"
+                value={gifResolution}
+                onChange={(e) => setGifResolution(parseFloat(e.target.value))}
+                className="w-full accent-emerald-500"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-stone-400 flex justify-between">
+                <span>Qualität (Kompression)</span>
+                <span>{gifQuality} / 10</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                value={gifQuality}
+                onChange={(e) => setGifQuality(parseInt(e.target.value))}
+                className="w-full accent-emerald-500"
+              />
+            </div>
+          </div>
+
+          <div className="h-px w-full bg-stone-700 my-1"></div>
+
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-stone-300">
               <Layout size={18} className="text-emerald-400" />
               <h3 className="font-semibold text-sm">Collage Export</h3>
             </div>
             
+            <div className="bg-stone-900/50 p-2 rounded border border-stone-700/50">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-stone-400">Geschätzte Größe:</span>
+                <span className="font-mono text-emerald-400">
+                  ~{getEstimatedCollageSize().toFixed(1)} MB
+                </span>
+              </div>
+            </div>
+
             <button
               onClick={generateCollage}
               disabled={images.length < 2 || !refId}
@@ -931,38 +999,6 @@ export default function App() {
           </div>
 
           <div className="space-y-4 pt-2 border-t border-stone-700/50">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-stone-400 flex justify-between">
-                <span>Auflösung</span>
-                <span>{Math.round(gifResolution * 100)}%</span>
-              </label>
-              <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.1"
-                value={gifResolution}
-                onChange={(e) => setGifResolution(parseFloat(e.target.value))}
-                className="w-full accent-blue-500"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-stone-400 flex justify-between">
-                <span>Qualität (Farben)</span>
-                <span>{gifQuality} / 10</span>
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value={gifQuality}
-                onChange={(e) => setGifQuality(parseInt(e.target.value))}
-                className="w-full accent-blue-500"
-              />
-            </div>
-
             <div className="bg-stone-900/50 p-2 rounded border border-stone-700/50">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-stone-400">Geschätzte Größe:</span>
