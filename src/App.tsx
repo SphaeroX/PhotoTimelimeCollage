@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Sun } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -50,9 +50,13 @@ export default function App() {
   const [initialImgPos, setInitialImgPos] = useState({ x: 0, y: 0, rot: 0, scale: 1 });
   const [initialPinch, setInitialPinch] = useState<{ distance: number; angle: number } | null>(null);
 
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
   // GIF Export Settings
   const [holdTime, setHoldTime] = useState(1.0);
   const [enableFading, setEnableFading] = useState(true);
+  const [enableDeflickering, setEnableDeflickering] = useState(false);
   const [fadeTime, setFadeTime] = useState(0.5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -100,6 +104,64 @@ export default function App() {
     updateWidth();
     return () => window.removeEventListener('resize', updateWidth);
   }, [activeId, refId]);
+
+  const startCamera = async () => {
+    setIsCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      setIsCameraActive(false);
+      alert("Kamera-Zugriff verweigert oder nicht unterstützt.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0);
+    
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `camera_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        const url = URL.createObjectURL(file);
+        const newImg: ImageItem = {
+          id: Math.random().toString(36).substr(2, 9),
+          file,
+          url,
+          width: canvas.width,
+          height: canvas.height,
+          xFrac: 0,
+          yFrac: 0,
+          scale: 1,
+          rotation: 0,
+        };
+        setImages((prev) => {
+          const updated = [...prev, newImg];
+          if (!refId) setRefId(newImg.id);
+          setActiveId(newImg.id);
+          return updated;
+        });
+        stopCamera();
+      }
+    }, 'image/jpeg', 0.9);
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -199,6 +261,79 @@ export default function App() {
     if (!found || found.value === 'original') return null;
     const [w, h] = found.value.split(':').map(Number);
     return w / h;
+  };
+
+  const autoAlignActiveImage = async () => {
+    if (!activeImage || !refImage || activeId === refId) return;
+
+    const loadImg = (src: string): Promise<HTMLImageElement> =>
+      new Promise((res) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => res(img);
+      });
+
+    const [imgRef, imgAct] = await Promise.all([loadImg(refImage.url), loadImg(activeImage.url)]);
+    
+    // Multi-scale Area Matching for Translation
+    const alignOnScale = (size: number, range: number, sx = 0, sy = 0) => {
+      const c1 = document.createElement('canvas');
+      const c2 = document.createElement('canvas');
+      c1.width = c2.width = size;
+      c1.height = c2.height = size;
+      const ctx1 = c1.getContext('2d', { willReadFrequently: true });
+      const ctx2 = c2.getContext('2d', { willReadFrequently: true });
+      if (!ctx1 || !ctx2) return { x: 0, y: 0 };
+
+      const draw = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, ox: number, oy: number) => {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, size, size);
+        const s = Math.min(size / img.width, size / img.height);
+        ctx.drawImage(img, (size - img.width * s) / 2 + ox, (size - img.height * s) / 2 + oy, img.width * s, img.height * s);
+      };
+
+      draw(ctx1, imgRef, 0, 0);
+      const d1 = ctx1.getImageData(0, 0, size, size).data;
+      let bx = sx, by = sy, me = Infinity;
+
+      for (let y = sy - range; y <= sy + range; y++) {
+        for (let x = sx - range; x <= sx + range; x++) {
+          draw(ctx2, imgAct, x, y);
+          const d2 = ctx2.getImageData(0, 0, size, size).data;
+          let e = 0;
+          for (let i = 0; i < d2.length; i += 16) {
+            const d = d1[i] - d2[i];
+            e += d * d;
+          }
+          if (e < me) { me = e; bx = x; by = y; }
+        }
+      }
+      return { x: bx, y: by };
+    };
+
+    const c = alignOnScale(48, 10);
+    const f = alignOnScale(96, 5, c.x * 2, c.y * 2);
+
+    updateActiveImage({
+      xFrac: -f.x / 96,
+      yFrac: -f.y / 96,
+      rotation: 0,
+      scale: 1
+    });
+  };
+
+  const applyTransformToAll = () => {
+    if (!activeImage) return;
+    const { xFrac, yFrac, scale, rotation } = activeImage;
+    setImages((prev) =>
+      prev.map((img) => ({
+        ...img,
+        xFrac,
+        yFrac,
+        scale,
+        rotation
+      }))
+    );
   };
 
   const resetAllTransformations = () => {
@@ -352,6 +487,17 @@ export default function App() {
     updateActiveImage({ scale: newScale });
   };
 
+  const getAverageBrightness = (ctx: CanvasRenderingContext2D, width: number, height: number, x = 0, y = 0) => {
+    const imageData = ctx.getImageData(x, y, width, height);
+    const data = imageData.data;
+    let totalLuma = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      // Standard luma coefficients
+      totalLuma += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    return totalLuma / (data.length / 4);
+  };
+
   const generateCollage = async () => {
     if (images.length === 0 || !refId) return;
     const refImgData = images.find((i) => i.id === refId);
@@ -374,6 +520,19 @@ export default function App() {
         img.onload = () => res(img);
       });
 
+    let refBrightness = 128;
+    if (enableDeflickering) {
+      const refImg = await loadImg(refImgData.url);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 100; // Small scale for performance
+      tempCanvas.height = 100;
+      const tctx = tempCanvas.getContext('2d');
+      if (tctx) {
+        tctx.drawImage(refImg, 0, 0, 100, 100);
+        refBrightness = getAverageBrightness(tctx, 100, 100);
+      }
+    }
+
     for (let i = 0; i < images.length; i++) {
       const imgData = images[i];
       const img = await loadImg(imgData.url);
@@ -387,6 +546,21 @@ export default function App() {
       // Black background for the slot
       ctx.fillStyle = '#000';
       ctx.fillRect(i * outWidth, 0, outWidth, outHeight);
+
+      if (enableDeflickering) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = 100;
+        tempCanvas.height = 100;
+        const tctx = tempCanvas.getContext('2d');
+        if (tctx) {
+          tctx.drawImage(img, 0, 0, 100, 100);
+          const currentBrightness = getAverageBrightness(tctx, 100, 100);
+          const ratio = refBrightness / (currentBrightness || 1);
+          // Limit ratio to prevent extreme artifacts
+          const clampedRatio = Math.max(0.5, Math.min(2.0, ratio));
+          ctx.filter = `brightness(${clampedRatio})`;
+        }
+      }
 
       const slotCenterX = i * outWidth + outWidth / 2;
       const slotCenterY = outHeight / 2;
@@ -442,12 +616,38 @@ export default function App() {
 
     const loadedImages = await Promise.all(images.map(img => loadImg(img.url)));
 
+    const brightnessRatios: Record<number, number> = {};
+    if (enableDeflickering) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 100;
+      tempCanvas.height = 100;
+      const tctx = tempCanvas.getContext('2d');
+      if (tctx) {
+        // Use ref image as base
+        const refImgIdx = images.findIndex(img => img.id === refId);
+        tctx.drawImage(loadedImages[refImgIdx === -1 ? 0 : refImgIdx], 0, 0, 100, 100);
+        const refBrightness = getAverageBrightness(tctx, 100, 100);
+        
+        loadedImages.forEach((img, idx) => {
+          tctx.clearRect(0, 0, 100, 100);
+          tctx.drawImage(img, 0, 0, 100, 100);
+          const currentBrightness = getAverageBrightness(tctx, 100, 100);
+          const ratio = refBrightness / (currentBrightness || 1);
+          brightnessRatios[idx] = Math.max(0.5, Math.min(2.0, ratio));
+        });
+      }
+    }
+
     const drawImageScaled = (imgIdx: number, alpha = 1) => {
       const imgData = images[imgIdx];
       const img = loadedImages[imgIdx];
 
       ctx.save();
       ctx.globalAlpha = alpha;
+      
+      if (enableDeflickering && brightnessRatios[imgIdx]) {
+        ctx.filter = `brightness(${brightnessRatios[imgIdx]})`;
+      }
       
       const slotCenterX = outWidth / 2;
       const slotCenterY = outHeight / 2;
@@ -552,11 +752,20 @@ export default function App() {
             <ImageIcon className="text-emerald-500" />
             Timelapse Aligner
           </h1>
-          <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors w-full font-medium">
-            <Upload size={20} />
-            Bilder hochladen
-            <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
-          </label>
+          <div className="flex gap-2">
+            <label className="flex-1 cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium">
+              <Upload size={20} />
+              Bilder hochladen
+              <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
+            </label>
+            <button 
+              onClick={startCamera}
+              className="bg-stone-700 hover:bg-stone-600 text-emerald-400 p-3 rounded-lg flex justify-center items-center transition-colors"
+              title="Foto mit Kamera aufnehmen"
+            >
+              <Camera size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -679,15 +888,27 @@ export default function App() {
               />
             </div>
 
-            <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors">
-              <input
-                type="checkbox"
-                checked={enableFading}
-                onChange={(e) => setEnableFading(e.target.checked)}
-                className="rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800"
-              />
-              Fading aktivieren
-            </label>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={enableFading}
+                  onChange={(e) => setEnableFading(e.target.checked)}
+                  className="rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800"
+                />
+                Fading aktivieren
+              </label>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors" title="Passt die Helligkeit der Bilder an das Referenzbild an">
+                <input
+                  type="checkbox"
+                  checked={enableDeflickering}
+                  onChange={(e) => setEnableDeflickering(e.target.checked)}
+                  className="rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800"
+                />
+                Helligkeitsausgleich (Deflicker)
+              </label>
+            </div>
 
             {enableFading && (
               <div className="flex flex-col gap-1">
@@ -845,6 +1066,29 @@ export default function App() {
                   className="w-20 sm:w-24 accent-emerald-500"
                 />
               </div>
+
+              <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
+              
+              <button
+                onClick={autoAlignActiveImage}
+                disabled={!activeId || activeId === refId}
+                className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-stone-800 disabled:text-stone-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-bold shrink-0 shadow-lg ring-1 ring-emerald-500/50"
+                title="Bild automatisch am Referenzbild ausrichten"
+              >
+                <RefreshCcw size={14} />
+                Auto-Align
+              </button>
+
+              <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
+              
+              <button
+                onClick={applyTransformToAll}
+                className="bg-stone-700 hover:bg-stone-600 text-stone-200 px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-medium shrink-0"
+                title="Diese Ausrichtung auf alle Bilder übertragen"
+              >
+                <Layout size={14} className="text-emerald-400" />
+                Auf alle anwenden
+              </button>
             </>
           )}
         </div>
@@ -937,6 +1181,47 @@ export default function App() {
           )}
         </div>
       </div>
+      {isCameraActive && (
+        <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center p-4">
+          <div className="relative w-full max-w-2xl bg-black rounded-xl overflow-hidden shadow-2xl border border-stone-800">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              className="w-full aspect-video object-cover"
+            />
+            
+            {/* Overlay for alignment in camera view */}
+            {refImage && (
+              <img
+                src={refImage.url}
+                alt="Ref Overlay"
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-40 mix-blend-screen"
+                style={{ filter: edgeMode ? 'url(#edge-detect)' : 'none' }}
+              />
+            )}
+
+            <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-6">
+              <button 
+                onClick={stopCamera}
+                className="bg-stone-800 hover:bg-stone-700 text-white p-4 rounded-full transition-colors shadow-lg border border-stone-700"
+              >
+                <X size={24} />
+              </button>
+              <button 
+                onClick={capturePhoto}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-full transition-all hover:scale-105 active:scale-95 shadow-xl ring-4 ring-white/10"
+              >
+                <Camera size={32} />
+              </button>
+            </div>
+            
+            <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md">
+              Kamera-Vorschau (mit Referenz-Overlay)
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
