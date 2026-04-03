@@ -317,8 +317,9 @@ export default function App() {
     updateActiveImage({
       xFrac: -f.x / 96,
       yFrac: -f.y / 96,
-      rotation: 0,
-      scale: 1
+      // Preserve existing scale and rotation
+      rotation: activeImage.rotation,
+      scale: activeImage.scale
     });
   };
 
