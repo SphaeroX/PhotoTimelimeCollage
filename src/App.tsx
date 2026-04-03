@@ -379,6 +379,15 @@ export default function App() {
       const img = await loadImg(imgData.url);
 
       ctx.save();
+      // Clip image to its slot
+      ctx.beginPath();
+      ctx.rect(i * outWidth, 0, outWidth, outHeight);
+      ctx.clip();
+      
+      // Black background for the slot
+      ctx.fillStyle = '#000';
+      ctx.fillRect(i * outWidth, 0, outWidth, outHeight);
+
       const slotCenterX = i * outWidth + outWidth / 2;
       const slotCenterY = outHeight / 2;
 
@@ -871,7 +880,7 @@ export default function App() {
                   src={activeImage.url}
                   alt="Active"
                   draggable="false"
-                  className={`absolute origin-center max-w-none max-h-none cursor-move ${activeId === refId ? 'z-10' : 'z-20'}`}
+                  className="absolute origin-center max-w-none max-h-none cursor-move"
                   style={{
                     width: `${activeImage.width * (containerWidth / refImage.width)}px`,
                     height: `${activeImage.height * (containerWidth / refImage.width)}px`,
@@ -885,7 +894,8 @@ export default function App() {
                     `,
                     // Hide the active image if it is the ref image to avoid double rendering with filter/opacity
                     opacity: activeId === refId ? 0 : 1,
-                    pointerEvents: activeId === refId ? 'none' : 'auto'
+                    pointerEvents: activeId === refId ? 'none' : 'auto',
+                    zIndex: 10 // Active image is the background for alignment
                   }}
                 />
               )}
@@ -907,10 +917,11 @@ export default function App() {
                       scale(${refImage.scale}) 
                       rotate(${refImage.rotation}deg)
                     `,
+                    // When editing the ref image, show it fully. Otherwise show as overlay.
                     opacity: activeId === refId ? 1 : opacity / 100,
                     filter: edgeMode ? 'url(#edge-detect)' : 'none',
                     mixBlendMode: 'normal',
-                    zIndex: 15
+                    zIndex: 20 // Reference/Overlay is always on top
                   }}
                 />
               )}
