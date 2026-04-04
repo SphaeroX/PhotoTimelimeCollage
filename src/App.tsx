@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Square, Circle, FlipVertical } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Square, Circle, FlipVertical, Target, Crosshair, Trash2 } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -43,6 +43,11 @@ export default function App() {
   const [edgeMaskAmount, setEdgeMaskAmount] = useState(100);
   const [edgeMaskShape, setEdgeMaskShape] = useState<'rect' | 'circle'>('rect');
   const [edgeMaskInvert, setEdgeMaskInvert] = useState(false);
+  
+  const [alignmentMode, setAlignmentMode] = useState<'manual' | 'points'>('manual');
+  const [refPoints, setRefPoints] = useState<{x: number, y: number}[]>([]);
+  const [activePoints, setActivePoints] = useState<{x: number, y: number}[]>([]);
+  const [enablePointScale, setEnablePointScale] = useState(true);
   
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -339,18 +344,83 @@ export default function App() {
     });
   };
 
-  const applyTransformToAll = () => {
-    if (!activeImage) return;
-    const { xFrac, yFrac, scale, rotation } = activeImage;
-    setImages((prev) =>
-      prev.map((img) => ({
-        ...img,
-        xFrac,
-        yFrac,
-        scale,
-        rotation
-      }))
-    );
+  const applyPointAlignment = () => {
+    if (refPoints.length < 2 || activePoints.length < 2 || !activeImage || !refImage) return;
+
+    // Points are in 0-1 range of their respective images
+    const p1 = { x: refPoints[0].x * refImage.width, y: refPoints[0].y * refImage.height };
+    const p2 = { x: refPoints[1].x * refImage.width, y: refPoints[1].y * refImage.height };
+    const q1 = { x: activePoints[0].x * activeImage.width, y: activePoints[0].y * activeImage.height };
+    const q2 = { x: activePoints[1].x * activeImage.width, y: activePoints[1].y * activeImage.height };
+
+    // Vectors in "image pixels"
+    const dxP = p2.x - p1.x;
+    const dyP = p2.y - p1.y;
+    const distP = Math.sqrt(dxP * dxP + dyP * dyP);
+    const angleP = Math.atan2(dyP, dxP);
+
+    const dxQ = q2.x - q1.x;
+    const dyQ = q2.y - q1.y;
+    const distQ = Math.sqrt(dxQ * dxQ + dyQ * dyQ);
+    const angleQ = Math.atan2(dyQ, dxQ);
+
+    if (distQ === 0 || distP === 0) return;
+
+    // 1. Calculate new scale and rotation relative to ref image's CURRENT state
+    const scaleRatio = distP / distQ;
+    const newScale = enablePointScale ? refImage.scale * scaleRatio : activeImage.scale;
+    
+    const angleDiff = (angleP - angleQ) * (180 / Math.PI);
+    const newRotation = refImage.rotation + angleDiff;
+
+    // 2. Calculate translation to align Q1 with P1 in container space
+    // Let's find where P1 is relative to the container center (considering Ref transform)
+    const offPX = (p1.x - refImage.width / 2) / refImage.width;
+    const offPY = (p1.y - refImage.height / 2) / refImage.width;
+    
+    const radRef = (refImage.rotation * Math.PI) / 180;
+    const targetPX = refImage.xFrac + (offPX * Math.cos(radRef) - offPY * Math.sin(radRef)) * refImage.scale;
+    const targetPY = refImage.yFrac + (offPX * Math.sin(radRef) + offPY * Math.cos(radRef)) * refImage.scale;
+
+    // Now find the relative offset of Q1 in the active image
+    const offQX = (q1.x - activeImage.width / 2) / refImage.width;
+    const offQY = (q1.y - activeImage.height / 2) / refImage.width;
+    
+    const radAct = (newRotation * Math.PI) / 180;
+    const rotQX = (offQX * Math.cos(radAct) - offQY * Math.sin(radAct)) * newScale;
+    const rotQY = (offQX * Math.sin(radAct) + offQY * Math.cos(radAct)) * newScale;
+
+    // Resulting xFrac/yFrac
+    const newXFrac = targetPX - rotQX;
+    const newYFrac = targetPY - rotQY;
+
+    updateActiveImage({
+      scale: newScale,
+      rotation: newRotation,
+      xFrac: newXFrac,
+      yFrac: newYFrac
+    });
+    
+    setRefPoints([]);
+    setActivePoints([]);
+    setAlignmentMode('manual');
+  };
+
+  const addPointAtEvent = (e: React.MouseEvent | React.TouchEvent, target: 'ref' | 'active') => {
+    const element = e.currentTarget as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const clientX = 'touches' in e ? (e as React.TouchEvent).touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? (e as React.TouchEvent).touches[0].clientY : (e as React.MouseEvent).clientY;
+    
+    // Normalize to 0-1 range within the element
+    const x = (clientX - rect.left) / rect.width;
+    const y = (clientY - rect.top) / rect.height;
+
+    if (target === 'ref') {
+      setRefPoints(prev => [...prev, { x, y }]);
+    } else {
+      setActivePoints(prev => [...prev, { x, y }]);
+    }
   };
 
   const resetAllTransformations = () => {
@@ -368,6 +438,17 @@ export default function App() {
   // Setup drag and rotation modes on mouse down
   const handleEditorMouseDown = (e: React.MouseEvent) => {
     if (!activeId) return;
+
+    if (alignmentMode === 'points') {
+      // Logic: If refPoints and activePoints are equal, add to ref. Else add to active.
+      // This enforces pairs.
+      if (refPoints.length === activePoints.length) {
+        addPointAtEvent(e, 'ref');
+      } else {
+        addPointAtEvent(e, 'active');
+      }
+      return;
+    }
     
     // 0 = Left click, 2 = Right click
     if (e.button !== 0 && e.button !== 2) return;
@@ -393,7 +474,7 @@ export default function App() {
 
   // Handle translation or rotation based on mode
   const handleEditorMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingImage || !containerWidth) return;
+    if (alignmentMode === 'points' || !isDraggingImage || !containerWidth) return;
     
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
@@ -1052,81 +1133,142 @@ export default function App() {
 
       <div className="flex-1 flex flex-col bg-stone-900 relative h-[100dvh]">
         <div className="bg-stone-800 p-4 flex flex-wrap gap-4 items-center border-b border-stone-700 shadow-md z-10 sticky top-0 md:relative">
-          <div className="flex items-center gap-2">
-            <Eye className="text-stone-400 flex-shrink-0" size={18} />
-            <span className="text-sm font-medium hidden sm:inline">Overlay Deckkraft:</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={opacity}
-              onChange={(e) => setOpacity(Number(e.target.value))}
-              className="w-24 sm:w-32 accent-emerald-500"
-            />
-            <span className="text-xs text-stone-400 w-8">{opacity}%</span>
+          <div className="flex items-center gap-2 border-r border-stone-700 pr-3 mr-1">
+            <button
+              onClick={() => setAlignmentMode('manual')}
+              className={`p-2 rounded-lg flex items-center gap-2 transition-colors text-xs font-bold ${alignmentMode === 'manual' ? 'bg-emerald-600 text-white' : 'bg-stone-700 text-stone-400 hover:text-stone-200'}`}
+              title="Manuelles Ausrichten"
+            >
+              <Move size={16} />
+              <span className="hidden sm:inline">Manuell</span>
+            </button>
+            <button
+              onClick={() => setAlignmentMode('points')}
+              className={`p-2 rounded-lg flex items-center gap-2 transition-colors text-xs font-bold ${alignmentMode === 'points' ? 'bg-blue-600 text-white' : 'bg-stone-700 text-stone-400 hover:text-stone-200'}`}
+              title="Merkmals-Abgleich (Punkte)"
+            >
+              <Target size={16} />
+              <span className="hidden sm:inline">Punkte-Match</span>
+            </button>
           </div>
-          
-          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-emerald-400 transition-colors shrink-0">
-            <input
-              type="checkbox"
-              checked={edgeMode}
-              onChange={(e) => setEdgeMode(e.target.checked)}
-              className="rounded bg-stone-700 border-stone-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-stone-800"
-            />
-            <span className="hidden xs:inline">Kantenerkennung</span>
-            <span className="xs:hidden">Kanten</span>
-          </label>
 
-          {edgeMode && (
-            <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
-              <input 
-                type="color" 
-                value={edgeColor}
-                onChange={(e) => setEdgeColor(e.target.value)}
-                className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0 shrink-0"
-                title="Kantenfarbe wählen"
-              />
-              
-              <div className="flex items-center gap-2 border-l border-stone-700 pl-3">
-                <button 
-                  onClick={() => setEdgeMaskShape('rect')}
-                  className={`p-1.5 rounded transition-colors ${edgeMaskShape === 'rect' ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
-                  title="Rechteckige Maske"
-                >
-                  <Square size={14} />
-                </button>
-                <button 
-                  onClick={() => setEdgeMaskShape('circle')}
-                  className={`p-1.5 rounded transition-colors ${edgeMaskShape === 'circle' ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
-                  title="Kreisförmige Maske"
-                >
-                  <Circle size={14} />
-                </button>
-                
-                <button 
-                  onClick={() => setEdgeMaskInvert(!edgeMaskInvert)}
-                  className={`p-1.5 rounded transition-colors ${edgeMaskInvert ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
-                  title="Maske invertieren"
-                >
-                  <FlipVertical size={14} />
-                </button>
-                
-                <div className="flex items-center gap-2 ml-1">
-                  <input
-                    type="range"
-                    min="10"
-                    max="100"
-                    step="5"
-                    value={edgeMaskAmount}
-                    onChange={(e) => setEdgeMaskAmount(Number(e.target.value))}
-                    className="w-16 sm:w-24 accent-emerald-500"
-                    title={`Masken-Größe: ${edgeMaskAmount}%`}
-                  />
-                  <span className="text-[10px] font-mono text-stone-400 w-7">{edgeMaskAmount}%</span>
-                </div>
+          {alignmentMode === 'manual' ? (
+            <div className="flex items-center gap-4 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2">
+                <Eye className="text-stone-400 flex-shrink-0" size={18} />
+                <span className="text-sm font-medium hidden sm:inline">Overlay Deckkraft:</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={opacity}
+                  onChange={(e) => setOpacity(Number(e.target.value))}
+                  className="w-24 sm:w-32 accent-emerald-500"
+                />
+                <span className="text-xs text-stone-400 w-8">{opacity}%</span>
               </div>
+              
+              <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-emerald-400 transition-colors shrink-0">
+                <input
+                  type="checkbox"
+                  checked={edgeMode}
+                  onChange={(e) => setEdgeMode(e.target.checked)}
+                  className="rounded bg-stone-700 border-stone-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-stone-800"
+                />
+                <span className="hidden xs:inline">Kantenerkennung</span>
+                <span className="xs:hidden">Kanten</span>
+              </label>
+
+              {edgeMode && (
+                <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                  <input 
+                    type="color" 
+                    value={edgeColor}
+                    onChange={(e) => setEdgeColor(e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0 shrink-0"
+                    title="Kantenfarbe wählen"
+                  />
+                  
+                  <div className="flex items-center gap-2 border-l border-stone-700 pl-3">
+                    <button 
+                      onClick={() => setEdgeMaskShape('rect')}
+                      className={`p-1.5 rounded transition-colors ${edgeMaskShape === 'rect' ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                      title="Rechteckige Maske"
+                    >
+                      <Square size={14} />
+                    </button>
+                    <button 
+                      onClick={() => setEdgeMaskShape('circle')}
+                      className={`p-1.5 rounded transition-colors ${edgeMaskShape === 'circle' ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                      title="Kreisförmige Maske"
+                    >
+                      <Circle size={14} />
+                    </button>
+                    
+                    <button 
+                      onClick={() => setEdgeMaskInvert(!edgeMaskInvert)}
+                      className={`p-1.5 rounded transition-colors ${edgeMaskInvert ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                      title="Maske invertieren"
+                    >
+                      <FlipVertical size={14} />
+                    </button>
+                    
+                    <div className="flex items-center gap-2 ml-1">
+                      <input
+                        type="range"
+                        min="10"
+                        max="100"
+                        step="5"
+                        value={edgeMaskAmount}
+                        onChange={(e) => setEdgeMaskAmount(Number(e.target.value))}
+                        className="w-16 sm:w-24 accent-emerald-500"
+                        title={`Masken-Größe: ${edgeMaskAmount}%`}
+                      />
+                      <span className="text-[10px] font-mono text-stone-400 w-7">{edgeMaskAmount}%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 animate-in fade-in duration-300">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-stone-400 hidden lg:inline">Punkt hinzufügen für:</span>
+                <button 
+                  onClick={() => {}} // Placeholder, logic handled on canvas
+                  className="bg-blue-900/40 text-blue-300 px-3 py-1.5 rounded-lg border border-blue-700/50 text-[10px] sm:text-xs flex items-center gap-2 pointer-events-none"
+                >
+                  <Crosshair size={14} />
+                  Auf Leinwand klicken
+                </button>
+                <div className="flex items-center gap-2 bg-stone-900/50 px-3 py-1.5 rounded-lg border border-stone-700/50">
+                  <span className={`w-2 h-2 rounded-full ${refPoints.length > 0 ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-stone-700'}`}></span>
+                  <span className="text-[10px] sm:text-xs text-stone-300 font-mono">Ref: {refPoints.length}</span>
+                  <span className="mx-1 text-stone-700">|</span>
+                  <span className={`w-2 h-2 rounded-full ${activePoints.length > 0 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-stone-700'}`}></span>
+                  <span className="text-[10px] sm:text-xs text-stone-300 font-mono">Edit: {activePoints.length}</span>
+                </div>
+                <button 
+                  onClick={() => { setRefPoints([]); setActivePoints([]); }}
+                  className="text-stone-500 hover:text-red-400 transition-colors p-1.5 hover:bg-red-400/10 rounded-lg"
+                  title="Alle Punkte löschen"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+
+              <button
+                onClick={applyPointAlignment}
+                disabled={refPoints.length < 2 || activePoints.length < 2}
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-stone-800 disabled:text-stone-600 text-white px-4 py-1.5 rounded-lg flex items-center gap-2 transition-all text-xs font-bold shrink-0 shadow-lg shadow-blue-900/20 active:scale-95 border border-blue-400/30"
+              >
+                <Target size={14} />
+                Match anwenden
+              </button>
             </div>
           )}
+
+          <div className="flex-1"></div>
 
           {activeImage && (
             <>
@@ -1168,26 +1310,105 @@ export default function App() {
                 <RefreshCcw size={14} />
                 Auto-Align
               </button>
-
-              <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
-              
-              <button
-                onClick={applyTransformToAll}
-                className="bg-stone-700 hover:bg-stone-600 text-stone-200 px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-medium shrink-0"
-                title="Diese Ausrichtung auf alle Bilder übertragen"
-              >
-                <Layout size={14} className="text-emerald-400" />
-                Auf alle anwenden
-              </button>
             </>
           )}
         </div>
 
-        <div className="flex-1 overflow-auto p-4 flex justify-center items-center bg-stone-950">
+        <div className="flex-1 overflow-auto p-4 flex flex-col md:flex-row justify-center items-center bg-stone-950 gap-4">
           {!refImage ? (
             <div className="text-stone-500 flex flex-col items-center gap-2 text-center">
               <ImageIcon size={48} className="opacity-20" />
               <p>Lade Bilder hoch und setze ein fixes Bild.</p>
+            </div>
+          ) : alignmentMode === 'points' && activeImage ? (
+            <div className="w-full h-full flex flex-col md:flex-row gap-4 animate-in fade-in zoom-in-95 duration-500">
+              {/* Left Side: Reference Image */}
+              <div className="flex-1 flex flex-col gap-2 min-h-[300px]">
+                <div className="flex justify-between items-center px-2">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                    Referenz (Fix)
+                  </span>
+                  <span className="text-[10px] text-stone-500">{refImage.width}x{refImage.height}</span>
+                </div>
+                <div 
+                  className="flex-1 bg-black rounded-xl border border-blue-500/30 overflow-hidden relative group cursor-crosshair"
+                  onClick={(e) => addPointAtEvent(e, 'ref')}
+                >
+                  <img 
+                    src={refImage.url} 
+                    alt="Ref" 
+                    className="w-full h-full object-contain pointer-events-none" 
+                  />
+                  {refPoints.map((p, i) => (
+                    <div 
+                      key={`ref-${i}`}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                      style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                    >
+                      <Crosshair size={20} className="text-blue-500 drop-shadow-lg" />
+                      <span className="absolute -top-5 bg-blue-600 text-white text-[9px] px-1 rounded-full font-bold">R{i+1}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Side: Active Image */}
+              <div className="flex-1 flex flex-col gap-2 min-h-[300px]">
+                <div className="flex justify-between items-center px-2">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                    Edit (Aktiv)
+                  </span>
+                  <span className="text-[10px] text-stone-500">{activeImage.width}x{activeImage.height}</span>
+                </div>
+                <div 
+                  className="flex-1 bg-black rounded-xl border border-emerald-500/30 overflow-hidden relative group cursor-crosshair"
+                  onClick={(e) => addPointAtEvent(e, 'active')}
+                >
+                  <img 
+                    src={activeImage.url} 
+                    alt="Active" 
+                    className="w-full h-full object-contain pointer-events-none" 
+                  />
+                  {activePoints.map((p, i) => (
+                    <div 
+                      key={`active-${i}`}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                      style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                    >
+                      <Crosshair size={20} className="text-emerald-500 drop-shadow-lg" />
+                      <span className="absolute -top-5 bg-emerald-600 text-white text-[9px] px-1 rounded-full font-bold">E{i+1}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Points Mode Status Bar */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-900/90 text-white px-6 py-2.5 rounded-full text-xs border border-blue-500/50 backdrop-blur-md shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-4 duration-500">
+                <Target size={18} className="text-blue-300 animate-pulse" />
+                <div className="flex flex-col border-r border-blue-500/30 pr-4">
+                  <span className="font-bold tracking-wide uppercase text-[9px] text-blue-300 opacity-80">Nächster Schritt</span>
+                  <span className="text-sm">
+                    {refPoints.length === activePoints.length 
+                      ? `Markiere Referenz-Punkt R${refPoints.length + 1} im linken Bild` 
+                      : `Markiere entsprechenden Edit-Punkt E${activePoints.length + 1} im rechten Bild`}
+                  </span>
+                </div>
+                
+                <label className="flex items-center gap-2 cursor-pointer hover:text-blue-200 transition-colors">
+                  <div className={`w-8 h-4 rounded-full relative transition-colors ${enablePointScale ? 'bg-emerald-500' : 'bg-stone-600'}`}>
+                    <input 
+                      type="checkbox" 
+                      className="hidden" 
+                      checked={enablePointScale}
+                      onChange={(e) => setEnablePointScale(e.target.checked)}
+                    />
+                    <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${enablePointScale ? 'left-4.5' : 'left-0.5'}`}></div>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-tight">Skalieren</span>
+                </label>
+              </div>
             </div>
           ) : (
             <div 
@@ -1273,7 +1494,7 @@ export default function App() {
                 />
               )}
               
-              {activeId && (
+              {activeId && alignmentMode === 'manual' && (
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-5 py-2 rounded-full text-[10px] sm:text-xs pointer-events-none flex items-center gap-3 sm:gap-4 backdrop-blur-sm shadow-lg whitespace-nowrap overflow-x-auto max-w-[95%]">
                   <span className="flex items-center gap-1 shrink-0"><Move size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Bewegen</span><span className="xs:hidden">Drag</span></span>
                   <span className="flex items-center gap-1 shrink-0"><RotateCwIcon size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Rotieren</span><span className="xs:hidden">Rotate</span></span>
