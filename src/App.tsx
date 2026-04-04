@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Square, Circle } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -37,9 +37,11 @@ export default function App() {
   
   const [aspectRatio, setAspectRatio] = useState('original');
   const [opacity, setOpacity] = useState(50);
-// ... rest of the file ...
+
   const [edgeMode, setEdgeMode] = useState(false);
   const [edgeColor, setEdgeColor] = useState('#ffffff');
+  const [overlaySize, setOverlaySize] = useState(100);
+  const [overlayShape, setOverlayShape] = useState<'rect' | 'circle'>('rect');
   
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -243,7 +245,7 @@ export default function App() {
         }
         
         // If we move/scale/rotate the reference image, we move everything else too
-        // to maintain alignment (the "global crop" effect)
+        // to maintain alignment (the \"global crop\" effect)
         if (isRef) {
           const newImg = { ...img };
           if (updates.xFrac !== undefined) {
@@ -605,7 +607,7 @@ export default function App() {
   const generateGIF = async () => {
     if (images.length === 0 || !refId) return;
     if (!window.gifshot) {
-      alert("GIF Encoder wird noch geladen. Bitte versuche es in wenigen Sekunden erneut.");
+      alert(\"GIF Encoder wird noch geladen. Bitte versuche es in wenigen Sekunden erneut.\");
       return;
     }
 
@@ -737,7 +739,7 @@ export default function App() {
         link.href = obj.image;
         link.click();
       } else {
-        alert("Ein Fehler ist bei der GIF Generierung aufgetreten.");
+        alert(\"Ein Fehler ist bei der GIF Generierung aufgetreten.\");
       }
       setIsGenerating(false);
       setProgress(0);
@@ -756,38 +758,38 @@ export default function App() {
   const edgeB = parseInt(edgeColor.slice(5, 7), 16) / 255;
 
   return (
-    <div className="min-h-[100dvh] bg-stone-900 text-stone-100 flex flex-col md:flex-row font-sans">
-      <svg className="hidden">
-        <filter id="edge-detect">
-          <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
-          <feConvolveMatrix order="3 3" preserveAlpha="true" kernelMatrix="-1 -1 -1 -1 8 -1 -1 -1 -1" in="gray" result="edges"/>
-          <feColorMatrix type="matrix" values={`0 0 0 0 ${edgeR}  0 0 0 0 ${edgeG}  0 0 0 0 ${edgeB}  5 0 0 0 0`} in="edges" />
+    <div className=\"min-h-[100dvh] bg-stone-900 text-stone-100 flex flex-col md:flex-row font-sans\">
+      <svg className=\"hidden\">
+        <filter id=\"edge-detect\">
+          <feColorMatrix type=\"matrix\" values=\"0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0\" result=\"gray\"/>
+          <feConvolveMatrix order=\"3 3\" preserveAlpha=\"true\" kernelMatrix=\"-1 -1 -1 -1 8 -1 -1 -1 -1\" in=\"gray\" result=\"edges\"/>
+          <feColorMatrix type=\"matrix\" values={`0 0 0 0 ${edgeR}  0 0 0 0 ${edgeG}  0 0 0 0 ${edgeB}  5 0 0 0 0`} in=\"edges\" />
         </filter>
       </svg>
 
-      <div className="w-full md:w-80 bg-stone-800 border-r border-stone-700 flex flex-col z-20 max-h-screen md:max-h-none overflow-y-auto">
-        <div className="p-4 border-b border-stone-700">
-          <h1 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2">
-            <ImageIcon className="text-emerald-500" />
+      <div className=\"w-full md:w-80 bg-stone-800 border-r border-stone-700 flex flex-col z-20 max-h-screen md:max-h-none overflow-y-auto\">
+        <div className=\"p-4 border-b border-stone-700\">
+          <h1 className=\"text-lg md:text-xl font-bold mb-4 flex items-center gap-2\">
+            <ImageIcon className=\"text-emerald-500\" />
             Timelapse Aligner
           </h1>
-          <div className="flex gap-2">
-            <label className="flex-1 cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium">
+          <div className=\"flex gap-2\">
+            <label className=\"flex-1 cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium\">
               <Upload size={20} />
               Bilder hochladen
-              <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} />
+              <input type=\"file\" multiple accept=\"image/*\" className=\"hidden\" onChange={handleUpload} />
             </label>
             <button 
               onClick={startCamera}
-              className="bg-stone-700 hover:bg-stone-600 text-emerald-400 p-3 rounded-lg flex justify-center items-center transition-colors"
-              title="Foto mit Kamera aufnehmen"
+              className=\"bg-stone-700 hover:bg-stone-600 text-emerald-400 p-3 rounded-lg flex justify-center items-center transition-colors\"
+              title=\"Foto mit Kamera aufnehmen\"
             >
               <Camera size={20} />
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className=\"flex-1 overflow-y-auto p-4 space-y-2\">
           {images.map((img, idx) => (
             <div
               key={img.id}
@@ -799,17 +801,17 @@ export default function App() {
                 activeId === img.id ? 'border-emerald-500' : 'border-stone-700'
               }`}
             >
-              <GripVertical className="text-stone-500 flex-shrink-0" size={16} />
-              <img src={img.url} alt="thumb" className="w-12 h-12 object-cover rounded" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs truncate text-stone-300">{img.file.name}</p>
-                <div className="flex gap-2 mt-1">
+              <GripVertical className=\"text-stone-500 flex-shrink-0\" size={16} />
+              <img src={img.url} alt=\"thumb\" className=\"w-12 h-12 object-cover rounded\" />
+              <div className=\"flex-1 min-w-0\">
+                <p className=\"text-xs truncate text-stone-300\">{img.file.name}</p>
+                <div className=\"flex gap-2 mt-1\">
                   <button
                     onClick={() => setRefId(img.id)}
                     className={`text-xs px-3 py-1.5 sm:px-2 sm:py-1 rounded font-medium ${
                       refId === img.id ? 'bg-blue-600 text-white' : 'bg-stone-700 hover:bg-stone-600'
                     }`}
-                    title="Als fixes Referenzbild setzen"
+                    title=\"Als fixes Referenzbild setzen\"
                   >
                     Fix
                   </button>
@@ -818,13 +820,13 @@ export default function App() {
                     className={`text-xs px-3 py-1.5 sm:px-2 sm:py-1 rounded font-medium ${
                       activeId === img.id ? 'border-emerald-500 bg-emerald-600 text-white' : 'bg-stone-700 hover:bg-stone-600'
                     }`}
-                    title="Zum Ausrichten auswählen"
+                    title=\"Zum Ausrichten auswählen\"
                   >
                     Edit
                   </button>
                 </div>
               </div>
-              <button onClick={() => removeImage(img.id)} className="text-stone-500 hover:text-red-400 p-1">
+              <button onClick={() => removeImage(img.id)} className=\"text-stone-500 hover:text-red-400 p-1\">
                 <X size={16} />
               </button>
             </div>
@@ -833,8 +835,8 @@ export default function App() {
           {images.length > 0 && (
             <button
               onClick={resetAllTransformations}
-              className="w-full mt-2 bg-stone-700 hover:bg-stone-600 text-stone-200 p-2 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm"
-              title="Reset all positions, rotations and scaling"
+              className=\"w-full mt-2 bg-stone-700 hover:bg-stone-600 text-stone-200 p-2 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm\"
+              title=\"Reset all positions, rotations and scaling\"
             >
               <RefreshCcw size={16} />
               Alle zurücksetzen
@@ -842,13 +844,13 @@ export default function App() {
           )}
         </div>
 
-        <div className="p-4 border-t border-stone-700 flex flex-col gap-4 bg-stone-850 overflow-y-auto max-h-[50vh]">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-stone-300">
-              <Crop size={18} className="text-emerald-400" />
-              <h3 className="font-semibold text-sm">Leinwand & Format</h3>
+        <div className=\"p-4 border-t border-stone-700 flex flex-col gap-4 bg-stone-850 overflow-y-auto max-h-[50vh]\">
+          <div className=\"flex flex-col gap-3\">
+            <div className=\"flex items-center gap-2 text-stone-300\">
+              <Crop size={18} className=\"text-emerald-400\" />
+              <h3 className=\"font-semibold text-sm\">Leinwand & Format</h3>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className=\"grid grid-cols-2 gap-2\">
               {ASPECT_RATIOS.map((ratio) => (
                 <button
                   key={ratio.value}
@@ -865,59 +867,59 @@ export default function App() {
             </div>
           </div>
 
-          <div className="h-px w-full bg-stone-700 my-1"></div>
+          <div className=\"h-px w-full bg-stone-700 my-1\"></div>
 
-          <div className="flex items-center gap-2 text-stone-300">
-            <Settings2 size={18} className="text-emerald-400" />
-            <h3 className="font-semibold text-sm">Export-Einstellungen</h3>
+          <div className=\"flex items-center gap-2 text-stone-300\">
+            <Settings2 size={18} className=\"text-emerald-400\" />
+            <h3 className=\"font-semibold text-sm\">Export-Einstellungen</h3>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-stone-400 flex justify-between">
+          <div className=\"space-y-4\">
+            <div className=\"flex flex-col gap-1\">
+              <label className=\"text-xs text-stone-400 flex justify-between\">
                 <span>Auflösung (Skalierung)</span>
                 <span>{Math.round(gifResolution * 100)}%</span>
               </label>
               <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.1"
+                type=\"range\"
+                min=\"0.1\"
+                max=\"1.0\"
+                step=\"0.1\"
                 value={gifResolution}
                 onChange={(e) => setGifResolution(parseFloat(e.target.value))}
-                className="w-full accent-emerald-500"
+                className=\"w-full accent-emerald-500\"
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-stone-400 flex justify-between">
+            <div className=\"flex flex-col gap-1\">
+              <label className=\"text-xs text-stone-400 flex justify-between\">
                 <span>Qualität (Kompression)</span>
                 <span>{gifQuality} / 10</span>
               </label>
               <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
+                type=\"range\"
+                min=\"1\"
+                max=\"10\"
+                step=\"1\"
                 value={gifQuality}
                 onChange={(e) => setGifQuality(parseInt(e.target.value))}
-                className="w-full accent-emerald-500"
+                className=\"w-full accent-emerald-500\"
               />
             </div>
           </div>
 
-          <div className="h-px w-full bg-stone-700 my-1"></div>
+          <div className=\"h-px w-full bg-stone-700 my-1\"></div>
 
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-stone-300">
-              <Layout size={18} className="text-emerald-400" />
-              <h3 className="font-semibold text-sm">Collage Export</h3>
+          <div className=\"flex flex-col gap-3\">
+            <div className=\"flex items-center gap-2 text-stone-300\">
+              <Layout size={18} className=\"text-emerald-400\" />
+              <h3 className=\"font-semibold text-sm\">Collage Export</h3>
             </div>
             
-            <div className="bg-stone-900/50 p-2 rounded border border-stone-700/50">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-stone-400">Geschätzte Größe:</span>
-                <span className="font-mono text-emerald-400">
+            <div className=\"bg-stone-900/50 p-2 rounded border border-stone-700/50\">
+              <div className=\"flex justify-between items-center text-xs\">
+                <span className=\"text-stone-400\">Geschätzte Größe:</span>
+                <span className=\"font-mono text-emerald-400\">
                   ~{getEstimatedCollageSize().toFixed(1)} MB
                 </span>
               </div>
@@ -926,88 +928,88 @@ export default function App() {
             <button
               onClick={generateCollage}
               disabled={images.length < 2 || !refId}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium text-sm"
+              className=\"w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium text-sm\"
             >
               <Download size={18} />
               Collage speichern
             </button>
           </div>
 
-          <div className="h-px w-full bg-stone-700 my-1"></div>
+          <div className=\"h-px w-full bg-stone-700 my-1\"></div>
 
-          <div className="flex items-center gap-2 text-stone-300">
-            <Film size={18} className="text-blue-400" />
-            <h3 className="font-semibold text-sm">GIF Export</h3>
+          <div className=\"flex items-center gap-2 text-stone-300\">
+            <Film size={18} className=\"text-blue-400\" />
+            <h3 className=\"font-semibold text-sm\">GIF Export</h3>
           </div>
           
-          <div className="space-y-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-stone-400 flex justify-between">
+          <div className=\"space-y-3\">
+            <div className=\"flex flex-col gap-1\">
+              <label className=\"text-xs text-stone-400 flex justify-between\">
                 <span>Anzeigedauer pro Bild</span>
                 <span>{holdTime.toFixed(1)}s</span>
               </label>
               <input
-                type="range"
-                min="0.1"
-                max="3.0"
-                step="0.1"
+                type=\"range\"
+                min=\"0.1\"
+                max=\"3.0\"
+                step=\"0.1\"
                 value={holdTime}
                 onChange={(e) => setHoldTime(parseFloat(e.target.value))}
-                className="w-full accent-blue-500"
+                className=\"w-full accent-blue-500\"
               />
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors">
+            <div className=\"flex flex-col gap-2\">
+              <label className=\"flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors\">
                 <input
-                  type="checkbox"
+                  type=\"checkbox\"
                   checked={enableFading}
                   onChange={(e) => setEnableFading(e.target.checked)}
-                  className="rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800"
+                  className=\"rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800\"
                 />
                 Fading aktivieren
               </label>
 
-              <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors" title="Passt die Helligkeit der Bilder an das Referenzbild an">
+              <label className=\"flex items-center gap-2 text-sm cursor-pointer hover:text-blue-400 transition-colors\" title=\"Passt die Helligkeit der Bilder an das Referenzbild an\">
                 <input
-                  type="checkbox"
+                  type=\"checkbox\"
                   checked={enableDeflickering}
                   onChange={(e) => setEnableDeflickering(e.target.checked)}
-                  className="rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800"
+                  className=\"rounded bg-stone-700 border-stone-600 text-blue-500 focus:ring-blue-500 focus:ring-offset-stone-800\"
                 />
                 Helligkeitsausgleich (Deflicker)
               </label>
             </div>
 
             {enableFading && (
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-stone-400 flex justify-between">
+              <div className=\"flex flex-col gap-1\">
+                <label className=\"text-xs text-stone-400 flex justify-between\">
                   <span>Fading Dauer</span>
                   <span>{fadeTime.toFixed(1)}s</span>
                 </label>
                 <input
-                  type="range"
-                  min="0.1"
-                  max="2.0"
-                  step="0.1"
+                  type=\"range\"
+                  min=\"0.1\"
+                  max=\"2.0\"
+                  step=\"0.1\"
                   value={fadeTime}
                   onChange={(e) => setFadeTime(parseFloat(e.target.value))}
-                  className="w-full accent-blue-500"
+                  className=\"w-full accent-blue-500\"
                 />
               </div>
             )}
           </div>
 
-          <div className="space-y-4 pt-2 border-t border-stone-700/50">
-            <div className="bg-stone-900/50 p-2 rounded border border-stone-700/50">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-stone-400">Geschätzte Größe:</span>
+          <div className=\"space-y-4 pt-2 border-t border-stone-700/50\">
+            <div className=\"bg-stone-900/50 p-2 rounded border border-stone-700/50\">
+              <div className=\"flex justify-between items-center text-xs\">
+                <span className=\"text-stone-400\">Geschätzte Größe:</span>
                 <span className={`font-mono ${getEstimatedSize() > 50 ? 'text-orange-400' : 'text-blue-400'}`}>
                   ~{getEstimatedSize().toFixed(1)} MB
                 </span>
               </div>
               {getEstimatedSize() > 50 && (
-                <p className="text-[10px] text-orange-500 mt-1 leading-tight">
+                <p className=\"text-[10px] text-orange-500 mt-1 leading-tight\">
                   Achtung: Große GIFs können den Browser verlangsamen.
                 </p>
               )}
@@ -1017,16 +1019,16 @@ export default function App() {
           <button
             onClick={generateGIF}
             disabled={images.length < 2 || !refId || isGenerating}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium relative overflow-hidden text-sm"
+            className=\"w-full bg-blue-600 hover:bg-blue-500 disabled:bg-stone-700 disabled:text-stone-500 text-white p-3 rounded-lg flex justify-center items-center gap-2 transition-colors font-medium relative overflow-hidden text-sm\"
           >
             {isGenerating ? (
               <>
                 <div 
-                  className="absolute left-0 top-0 bottom-0 bg-blue-500 opacity-50 transition-all duration-300"
+                  className=\"absolute left-0 top-0 bottom-0 bg-blue-500 opacity-50 transition-all duration-300\"
                   style={{ width: `${progress * 100}%` }}
                 ></div>
-                <Loader2 size={20} className="animate-spin relative z-10" />
-                <span className="relative z-10">Generiere... {Math.round(progress * 100)}%</span>
+                <Loader2 size={20} className=\"animate-spin relative z-10\" />
+                <span className=\"relative z-10\">Generiere... {Math.round(progress * 100)}%</span>
               </>
             ) : (
               <>
@@ -1038,108 +1040,141 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col bg-stone-900 relative h-[100dvh]">
-        <div className="bg-stone-800 p-4 flex flex-wrap gap-4 items-center border-b border-stone-700 shadow-md z-10 sticky top-0 md:relative">
-          <div className="flex items-center gap-2">
-            <Eye className="text-stone-400 flex-shrink-0" size={18} />
-            <span className="text-sm font-medium hidden sm:inline">Overlay Deckkraft:</span>
+      <div className=\"flex-1 flex flex-col bg-stone-900 relative h-[100dvh]\">
+        <div className=\"bg-stone-800 p-4 flex flex-wrap gap-4 items-center border-b border-stone-700 shadow-md z-10 sticky top-0 md:relative\">
+          <div className=\"flex items-center gap-2\">
+            <Eye className=\"text-stone-400 flex-shrink-0\" size={18} />
+            <span className=\"text-sm font-medium hidden sm:inline\">Overlay Deckkraft:</span>
             <input
-              type="range"
-              min="0"
-              max="100"
+              type=\"range\"
+              min=\"0\"
+              max=\"100\"
               value={opacity}
               onChange={(e) => setOpacity(Number(e.target.value))}
-              className="w-24 sm:w-32 accent-emerald-500"
+              className=\"w-24 sm:w-32 accent-emerald-500\"
             />
-            <span className="text-xs text-stone-400 w-8">{opacity}%</span>
+            <span className=\"text-xs text-stone-400 w-8\">{opacity}%</span>
           </div>
           
-          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-emerald-400 transition-colors">
+          <label className=\"flex items-center gap-2 text-sm cursor-pointer hover:text-emerald-400 transition-colors\">
             <input
-              type="checkbox"
+              type=\"checkbox\"
               checked={edgeMode}
               onChange={(e) => setEdgeMode(e.target.checked)}
-              className="rounded bg-stone-700 border-stone-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-stone-800"
+              className=\"rounded bg-stone-700 border-stone-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-stone-800\"
             />
-            <span className="hidden xs:inline">Kantenerkennung</span>
-            <span className="xs:hidden">Kanten</span>
+            <span className=\"hidden xs:inline\">Kantenerkennung</span>
+            <span className=\"xs:hidden\">Kanten</span>
           </label>
 
           {edgeMode && (
-            <input 
-              type="color" 
-              value={edgeColor}
-              onChange={(e) => setEdgeColor(e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0"
-              title="Kantenfarbe wählen"
-            />
+            <div className=\"flex items-center gap-4 bg-stone-700/30 px-3 py-1 rounded-lg border border-stone-600/50\">
+              <input 
+                type=\"color\" 
+                value={edgeColor}
+                onChange={(e) => setEdgeColor(e.target.value)}
+                className=\"w-6 h-6 rounded cursor-pointer bg-transparent border-none p-0 shrink-0\"
+                title=\"Kantenfarbe wählen\"
+              />
+              
+              <div className=\"h-4 w-px bg-stone-600 mx-1\"></div>
+              
+              <div className=\"flex items-center gap-2\">
+                <span className=\"text-[10px] text-stone-400 uppercase font-bold tracking-wider hidden sm:inline\">Größe:</span>
+                <input
+                  type=\"range\"
+                  min=\"10\"
+                  max=\"100\"
+                  value={overlaySize}
+                  onChange={(e) => setOverlaySize(Number(e.target.value))}
+                  className=\"w-20 sm:w-24 accent-emerald-500\"
+                />
+              </div>
+
+              <div className=\"flex gap-1 bg-stone-800 p-0.5 rounded border border-stone-600\">
+                <button
+                  onClick={() => setOverlayShape('rect')}
+                  className={`p-1 rounded ${overlayShape === 'rect' ? 'bg-emerald-600 text-white' : 'text-stone-500 hover:text-stone-300'}`}
+                  title=\"Quadratischer Ausschnitt\"
+                >
+                  <Square size={14} />
+                </button>
+                <button
+                  onClick={() => setOverlayShape('circle')}
+                  className={`p-1 rounded ${overlayShape === 'circle' ? 'bg-emerald-600 text-white' : 'text-stone-500 hover:text-stone-300'}`}
+                  title=\"Kreisförmiger Ausschnitt\"
+                >
+                  <Circle size={14} />
+                </button>
+              </div>
+            </div>
           )}
 
           {activeImage && (
             <>
-              <div className="h-6 w-px bg-stone-700 mx-1 hidden sm:block"></div>
-              <div className="flex items-center gap-2">
-                <Settings2 className="text-stone-400 flex-shrink-0" size={18} />
-                <span className="text-sm font-medium hidden lg:inline">Skalierung:</span>
+              <div className=\"h-6 w-px bg-stone-700 mx-1 hidden sm:block\"></div>
+              <div className=\"flex items-center gap-2\">
+                <Settings2 className=\"text-stone-400 flex-shrink-0\" size={18} />
+                <span className=\"text-sm font-medium hidden lg:inline\">Skalierung:</span>
                 <input
-                  type="range"
-                  min="0.1"
-                  max="10"
-                  step="0.01"
+                  type=\"range\"
+                  min=\"0.1\"
+                  max=\"10\"
+                  step=\"0.01\"
                   value={activeImage.scale}
                   onChange={(e) => updateActiveImage({ scale: parseFloat(e.target.value) })}
-                  className="w-20 sm:w-24 accent-emerald-500"
+                  className=\"w-20 sm:w-24 accent-emerald-500\"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <RotateCwIcon size={18} className="text-stone-400 flex-shrink-0" />
-                <span className="text-sm font-medium hidden lg:inline">Rotation:</span>
+              <div className=\"flex items-center gap-2\">
+                <RotateCwIcon size={18} className=\"text-stone-400 flex-shrink-0\" />
+                <span className=\"text-sm font-medium hidden lg:inline\">Rotation:</span>
                 <input
-                  type="range"
-                  min="-180"
-                  max="180"
+                  type=\"range\"
+                  min=\"-180\"
+                  max=\"180\"
                   value={activeImage.rotation}
                   onChange={(e) => updateActiveImage({ rotation: parseFloat(e.target.value) })}
-                  className="w-20 sm:w-24 accent-emerald-500"
+                  className=\"w-20 sm:w-24 accent-emerald-500\"
                 />
               </div>
 
-              <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
+              <div className=\"h-6 w-px bg-stone-700 mx-1 hidden lg:block\"></div>
               
               <button
                 onClick={autoAlignActiveImage}
                 disabled={!activeId || activeId === refId}
-                className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-stone-800 disabled:text-stone-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-bold shrink-0 shadow-lg ring-1 ring-emerald-500/50"
-                title="Bild automatisch am Referenzbild ausrichten"
+                className=\"bg-emerald-700 hover:bg-emerald-600 disabled:bg-stone-800 disabled:text-stone-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-bold shrink-0 shadow-lg ring-1 ring-emerald-500/50\"
+                title=\"Bild automatisch am Referenzbild ausrichten\"
               >
                 <RefreshCcw size={14} />
                 Auto-Align
               </button>
 
-              <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
+              <div className=\"h-6 w-px bg-stone-700 mx-1 hidden lg:block\"></div>
               
               <button
                 onClick={applyTransformToAll}
-                className="bg-stone-700 hover:bg-stone-600 text-stone-200 px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-medium shrink-0"
-                title="Diese Ausrichtung auf alle Bilder übertragen"
+                className=\"bg-stone-700 hover:bg-stone-600 text-stone-200 px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-medium shrink-0\"
+                title=\"Diese Ausrichtung auf alle Bilder übertragen\"
               >
-                <Layout size={14} className="text-emerald-400" />
+                <Layout size={14} className=\"text-emerald-400\" />
                 Auf alle anwenden
               </button>
             </>
           )}
         </div>
 
-        <div className="flex-1 overflow-auto p-4 flex justify-center items-center bg-stone-950">
+        <div className=\"flex-1 overflow-auto p-4 flex justify-center items-center bg-stone-950\">
           {!refImage ? (
-            <div className="text-stone-500 flex flex-col items-center gap-2 text-center">
-              <ImageIcon size={48} className="opacity-20" />
+            <div className=\"text-stone-500 flex flex-col items-center gap-2 text-center\">
+              <ImageIcon size={48} className=\"opacity-20\" />
               <p>Lade Bilder hoch und setze ein fixes Bild.</p>
             </div>
           ) : (
             <div 
               ref={containerRef}
-              className="relative bg-black shadow-2xl ring-1 ring-stone-800 overflow-hidden"
+              className=\"relative bg-black shadow-2xl ring-1 ring-stone-800 overflow-hidden\"
               style={{
                 width: '100%',
                 maxWidth: '800px',
@@ -1159,9 +1194,9 @@ export default function App() {
               {activeImage && (
                 <img
                   src={activeImage.url}
-                  alt="Active"
-                  draggable="false"
-                  className="absolute origin-center max-w-none max-h-none cursor-move"
+                  alt=\"Active\"
+                  draggable=\"false\"
+                  className=\"absolute origin-center max-w-none max-h-none cursor-move\"
                   style={{
                     width: `${activeImage.width * (containerWidth / refImage.width)}px`,
                     height: `${activeImage.height * (containerWidth / refImage.width)}px`,
@@ -1184,8 +1219,8 @@ export default function App() {
               {refImage && (
                 <img
                   src={refImage.url}
-                  alt="Reference"
-                  draggable="false"
+                  alt=\"Reference\"
+                  draggable=\"false\"
                   className={`absolute origin-center max-w-none max-h-none ${activeId === refId ? 'cursor-move' : 'pointer-events-none'}`}
                   style={{ 
                     width: `${refImage.width * (containerWidth / refImage.width)}px`,
@@ -1201,6 +1236,7 @@ export default function App() {
                     // When editing the ref image, show it fully. Otherwise show as overlay.
                     opacity: activeId === refId ? 1 : opacity / 100,
                     filter: edgeMode ? 'url(#edge-detect)' : 'none',
+                    clipPath: edgeMode ? (overlayShape === 'circle' ? `circle(${overlaySize/2}% at 50% 50%)` : `inset(${(100 - overlaySize) / 2}%)`) : 'none',
                     mixBlendMode: 'normal',
                     zIndex: 20 // Reference/Overlay is always on top
                   }}
@@ -1208,10 +1244,10 @@ export default function App() {
               )}
               
               {activeId && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-5 py-2 rounded-full text-[10px] sm:text-xs pointer-events-none flex items-center gap-3 sm:gap-4 backdrop-blur-sm shadow-lg whitespace-nowrap overflow-x-auto max-w-[95%]">
-                  <span className="flex items-center gap-1 shrink-0"><Move size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Bewegen</span><span className="xs:hidden">Drag</span></span>
-                  <span className="flex items-center gap-1 shrink-0"><RotateCwIcon size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Rotieren</span><span className="xs:hidden">Rotate</span></span>
-                  <span className="flex items-center gap-1 shrink-0"><Settings2 size={14} className="text-emerald-400" /> <span className="hidden xs:inline">Skalieren</span><span className="xs:hidden">Scale</span></span>
+                <div className=\"absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 text-white px-5 py-2 rounded-full text-[10px] sm:text-xs pointer-events-none flex items-center gap-3 sm:gap-4 backdrop-blur-sm shadow-lg whitespace-nowrap overflow-x-auto max-w-[95%]\">
+                  <span className=\"flex items-center gap-1 shrink-0\"><Move size={14} className=\"text-emerald-400\" /> <span className=\"hidden xs:inline\">Bewegen</span><span className=\"xs:hidden\">Drag</span></span>
+                  <span className=\"flex items-center gap-1 shrink-0\"><RotateCwIcon size={14} className=\"text-emerald-400\" /> <span className=\"hidden xs:inline\">Rotieren</span><span className=\"xs:hidden\">Rotate</span></span>
+                  <span className=\"flex items-center gap-1 shrink-0\"><Settings2 size={14} className=\"text-emerald-400\" /> <span className=\"hidden xs:inline\">Skalieren</span><span className=\"xs:hidden\">Scale</span></span>
                 </div>
               )}
             </div>
@@ -1219,41 +1255,44 @@ export default function App() {
         </div>
       </div>
       {isCameraActive && (
-        <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center p-4">
-          <div className="relative w-full max-w-2xl bg-black rounded-xl overflow-hidden shadow-2xl border border-stone-800">
+        <div className=\"fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center p-4\">
+          <div className=\"relative w-full max-w-2xl bg-black rounded-xl overflow-hidden shadow-2xl border border-stone-800\">
             <video 
               ref={videoRef} 
               autoPlay 
               playsInline 
-              className="w-full aspect-video object-cover"
+              className=\"w-full aspect-video object-cover\"
             />
             
             {/* Overlay for alignment in camera view */}
             {refImage && (
               <img
                 src={refImage.url}
-                alt="Ref Overlay"
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-40 mix-blend-screen"
-                style={{ filter: edgeMode ? 'url(#edge-detect)' : 'none' }}
+                alt=\"Ref Overlay\"
+                className=\"absolute inset-0 w-full h-full object-cover pointer-events-none opacity-40 mix-blend-screen\"
+                style={{ 
+                  filter: edgeMode ? 'url(#edge-detect)' : 'none',
+                  clipPath: edgeMode ? (overlayShape === 'circle' ? `circle(${overlaySize/2}% at 50% 50%)` : `inset(${(100 - overlaySize) / 2}%)`) : 'none'
+                }}
               />
             )}
 
-            <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-6">
+            <div className=\"absolute bottom-6 left-0 right-0 flex justify-center items-center gap-6\">
               <button 
                 onClick={stopCamera}
-                className="bg-stone-800 hover:bg-stone-700 text-white p-4 rounded-full transition-colors shadow-lg border border-stone-700"
+                className=\"bg-stone-800 hover:bg-stone-700 text-white p-4 rounded-full transition-colors shadow-lg border border-stone-700\"
               >
                 <X size={24} />
               </button>
               <button 
                 onClick={capturePhoto}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-full transition-all hover:scale-105 active:scale-95 shadow-xl ring-4 ring-white/10"
+                className=\"bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-full transition-all hover:scale-105 active:scale-95 shadow-xl ring-4 ring-white/10\"
               >
                 <Camera size={32} />
               </button>
             </div>
             
-            <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md">
+            <div className=\"absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md\">
               Kamera-Vorschau (mit Referenz-Overlay)
             </div>
           </div>
@@ -1263,11 +1302,11 @@ export default function App() {
   );
 }
 
-function RotateCwIcon({ size = 18, className = "text-stone-400" }) {
+function RotateCwIcon({ size = 18, className = \"text-stone-400\" }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-      <path d="M21 3v5h-5"/>
+    <svg xmlns=\"http://www.w3.org/2000/svg\" width={size} height={size} viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" strokeWidth=\"2\" strokeLinecap=\"round\" strokeLinejoin=\"round\" className={className}>
+      <path d=\"M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8\"/>
+      <path d=\"M21 3v5h-5\"/>
     </svg>
   );
 }
