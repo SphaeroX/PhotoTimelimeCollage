@@ -1,73 +1,45 @@
-# React + TypeScript + Vite
+# Timelapse Aligner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A powerful web-based tool to align series of photos for perfectly smooth timelapses and collages. 
 
-Currently, two official plugins are available:
+## 📸 What is Timelapse Aligner?
+Have you ever taken a series of photos of the same subject over time (like a growing plant, a construction site, or a selfie-a-day project) but struggled because they weren't perfectly framed?
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**Timelapse Aligner** allows you to:
+1. Upload your photos.
+2. Choose one as a reference ("Fix").
+3. Align all other photos to match that reference perfectly using manual or automatic tools.
+4. Export the result as a high-quality GIF or a wide collage.
 
-## React Compiler
+## ✨ Features
+- **Auto-Align:** Let the AI-driven matching algorithm find the best position for your images.
+- **Manual Precision:** Use drag, rotate, and pinch-to-zoom (on mobile) or scroll wheel (on desktop) to fine-tune alignment.
+- **Edge Detection Overlay:** Toggle a special "outline" mode to see exactly how features line up between images.
+- **Camera Capture:** Take new photos directly in the app with a transparent overlay of your reference image.
+- **GIF Export:** Customize hold time, fade transitions, and "Deflicker" (brightness normalization) for professional results.
+- **Privacy First:** All processing happens locally in your browser. No images are uploaded to any server.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🚀 How to Use
+1. **Upload Images:** Click "Upload Images" or use the Camera icon.
+2. **Set Reference:** Find the image you want as your base and click the **"Fix"** button.
+3. **Align Images:** Select another image by clicking **"Edit"**.
+   - **Manually:** Drag the image, use the sliders for rotation/scale, or use the **"Auto-Align"** button.
+   - **Apply to All:** Once you have a good crop/scale, you can "Apply to All" to use those settings for every image.
+4. **Export:** Choose between "Save Collage" (JPEG) or "Save GIF" in the side panel.
 
-## Expanding the ESLint configuration
+## 🛠 Local Development
+If you want to run this project locally:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. Clone the repository.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+4. Open `http://localhost:5173` in your browser.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
+Built with React 19, Vite, and Tailwind CSS.
