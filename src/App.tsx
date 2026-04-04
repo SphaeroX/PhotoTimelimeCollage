@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Square, Circle, FlipVertical } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -40,6 +40,9 @@ export default function App() {
 // ... rest of the file ...
   const [edgeMode, setEdgeMode] = useState(false);
   const [edgeColor, setEdgeColor] = useState('#ffffff');
+  const [edgeMaskAmount, setEdgeMaskAmount] = useState(100);
+  const [edgeMaskShape, setEdgeMaskShape] = useState<'rect' | 'circle'>('rect');
+  const [edgeMaskInvert, setEdgeMaskInvert] = useState(false);
   
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -747,6 +750,15 @@ export default function App() {
   const refImage = images.find((i) => i.id === refId);
   const activeImage = images.find((i) => i.id === activeId);
 
+  const imgAspect = refImage ? refImage.width / refImage.height : 1;
+  const maskP = (100 - edgeMaskAmount) / 2;
+  const maskPX = imgAspect > 1 ? maskP / imgAspect : maskP;
+  const maskPY = imgAspect > 1 ? maskP : maskP * imgAspect;
+  
+  const maskR = edgeMaskAmount / 2;
+  const maskRX = imgAspect > 1 ? maskR / imgAspect : maskR;
+  const maskRY = imgAspect > 1 ? maskR : maskR * imgAspect;
+
   const targetRatio = getAspectRatioValue();
   const containerAspect = targetRatio ? 1 / targetRatio : (refImage ? refImage.height / refImage.width : 1);
 
@@ -1054,7 +1066,7 @@ export default function App() {
             <span className="text-xs text-stone-400 w-8">{opacity}%</span>
           </div>
           
-          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-emerald-400 transition-colors">
+          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-emerald-400 transition-colors shrink-0">
             <input
               type="checkbox"
               checked={edgeMode}
@@ -1066,13 +1078,54 @@ export default function App() {
           </label>
 
           {edgeMode && (
-            <input 
-              type="color" 
-              value={edgeColor}
-              onChange={(e) => setEdgeColor(e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0"
-              title="Kantenfarbe wählen"
-            />
+            <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+              <input 
+                type="color" 
+                value={edgeColor}
+                onChange={(e) => setEdgeColor(e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer bg-transparent border-none p-0 shrink-0"
+                title="Kantenfarbe wählen"
+              />
+              
+              <div className="flex items-center gap-2 border-l border-stone-700 pl-3">
+                <button 
+                  onClick={() => setEdgeMaskShape('rect')}
+                  className={`p-1.5 rounded transition-colors ${edgeMaskShape === 'rect' ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                  title="Rechteckige Maske"
+                >
+                  <Square size={14} />
+                </button>
+                <button 
+                  onClick={() => setEdgeMaskShape('circle')}
+                  className={`p-1.5 rounded transition-colors ${edgeMaskShape === 'circle' ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                  title="Kreisförmige Maske"
+                >
+                  <Circle size={14} />
+                </button>
+                
+                <button 
+                  onClick={() => setEdgeMaskInvert(!edgeMaskInvert)}
+                  className={`p-1.5 rounded transition-colors ${edgeMaskInvert ? 'bg-emerald-600 text-white' : 'bg-stone-800 text-stone-500 hover:text-stone-300'}`}
+                  title="Maske invertieren"
+                >
+                  <FlipVertical size={14} />
+                </button>
+                
+                <div className="flex items-center gap-2 ml-1">
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    step="5"
+                    value={edgeMaskAmount}
+                    onChange={(e) => setEdgeMaskAmount(Number(e.target.value))}
+                    className="w-16 sm:w-24 accent-emerald-500"
+                    title={`Masken-Größe: ${edgeMaskAmount}%`}
+                  />
+                  <span className="text-[10px] font-mono text-stone-400 w-7">{edgeMaskAmount}%</span>
+                </div>
+              </div>
+            </div>
           )}
 
           {activeImage && (
@@ -1201,6 +1254,19 @@ export default function App() {
                     // When editing the ref image, show it fully. Otherwise show as overlay.
                     opacity: activeId === refId ? 1 : opacity / 100,
                     filter: edgeMode ? 'url(#edge-detect)' : 'none',
+                    clipPath: edgeMode && edgeMaskAmount < 100 
+                      ? (edgeMaskShape === 'rect' 
+                          ? (edgeMaskInvert 
+                              ? `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, ${maskPX}% ${maskPY}%, ${100 - maskPX}% ${maskPY}%, ${100 - maskPX}% ${100 - maskPY}%, ${maskPX}% ${100 - maskPY}%, ${maskPX}% ${maskPY}%)`
+                              : `inset(${maskPY}% ${maskPX}%)`)
+                          : (edgeMaskInvert ? 'none' : `ellipse(${maskRX}% ${maskRY}% at 50% 50%)`))
+                      : 'none',
+                    WebkitMaskImage: edgeMode && edgeMaskShape === 'circle' && edgeMaskInvert && edgeMaskAmount < 100
+                      ? `radial-gradient(ellipse ${maskRX}% ${maskRY}% at 50% 50%, transparent 99%, black 100%)`
+                      : 'none',
+                    maskImage: edgeMode && edgeMaskShape === 'circle' && edgeMaskInvert && edgeMaskAmount < 100
+                      ? `radial-gradient(ellipse ${maskRX}% ${maskRY}% at 50% 50%, transparent 99%, black 100%)`
+                      : 'none',
                     mixBlendMode: 'normal',
                     zIndex: 20 // Reference/Overlay is always on top
                   }}
@@ -1234,7 +1300,22 @@ export default function App() {
                 src={refImage.url}
                 alt="Ref Overlay"
                 className="absolute inset-0 w-full h-full object-cover pointer-events-none opacity-40 mix-blend-screen"
-                style={{ filter: edgeMode ? 'url(#edge-detect)' : 'none' }}
+                style={{ 
+                  filter: edgeMode ? 'url(#edge-detect)' : 'none',
+                  clipPath: edgeMode && edgeMaskAmount < 100 
+                    ? (edgeMaskShape === 'rect' 
+                        ? (edgeMaskInvert 
+                            ? `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, ${maskPX}% ${maskPY}%, ${100 - maskPX}% ${maskPY}%, ${100 - maskPX}% ${100 - maskPY}%, ${maskPX}% ${100 - maskPY}%, ${maskPX}% ${maskPY}%)`
+                            : `inset(${maskPY}% ${maskPX}%)`)
+                        : (edgeMaskInvert ? 'none' : `ellipse(${maskRX}% ${maskRY}% at 50% 50%)`))
+                    : 'none',
+                  WebkitMaskImage: edgeMode && edgeMaskShape === 'circle' && edgeMaskInvert && edgeMaskAmount < 100
+                    ? `radial-gradient(ellipse ${maskRX}% ${maskRY}% at 50% 50%, transparent 99%, black 100%)`
+                    : 'none',
+                  maskImage: edgeMode && edgeMaskShape === 'circle' && edgeMaskInvert && edgeMaskAmount < 100
+                    ? `radial-gradient(ellipse ${maskRX}% ${maskRY}% at 50% 50%, transparent 99%, black 100%)`
+                    : 'none'
+                }}
               />
             )}
 
