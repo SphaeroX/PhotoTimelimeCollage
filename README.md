@@ -2,6 +2,8 @@
 
 A powerful web-based tool to align series of photos for perfectly smooth timelapses and collages. 
 
+**Live Demo:** [https://sphaerox.github.io/PhotoTimelimeCollage/](https://sphaerox.github.io/PhotoTimelimeCollage/)
+
 ## 📸 What is Timelapse Aligner?
 Have you ever taken a series of photos of the same subject over time (like a growing plant, a construction site, or a selfie-a-day project) but struggled because they weren't perfectly framed?
 

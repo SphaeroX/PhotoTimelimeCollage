@@ -3,6 +3,8 @@
 ## Project Overview
 This project, **PhotoTimelimeCollage** (branded in the UI as **Timelapse Aligner**), is a React-based web application for aligning series of images. It is specifically designed to help users precisely overlay handheld photos for the purpose of creating smooth timelapse sequences.
 
+**Live URL:** [https://sphaerox.github.io/PhotoTimelimeCollage/](https://sphaerox.github.io/PhotoTimelimeCollage/)
+
 ### Core Technologies
 - **Frontend Framework:** React 19 (TypeScript)
 - **Build Tool:** Vite
