@@ -53,6 +53,9 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
+  const worldWidth = images.length > 0 ? images[0].width : 1000;
+  const zoomFactor = containerWidth / worldWidth;
+
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, mode: 'translate' });
   const [initialImgPos, setInitialImgPos] = useState({ x: 0, y: 0, rot: 0, scale: 1 });
@@ -285,7 +288,7 @@ export default function App() {
   };
 
   const autoAlignActiveImage = async () => {
-    if (!activeImage || !refImage || activeId === refId) return;
+    if (!activeId || !refId || activeId === refId || !activeImage || !refImage) return;
 
     const loadImg = (src: string): Promise<HTMLImageElement> =>
       new Promise((res) => {
@@ -296,51 +299,87 @@ export default function App() {
 
     const [imgRef, imgAct] = await Promise.all([loadImg(refImage.url), loadImg(activeImage.url)]);
     
-    // Multi-scale Area Matching for Translation
-    const alignOnScale = (size: number, range: number, sx = 0, sy = 0) => {
+    const alignOnScale = (size: number, range: number, sx = 0, sy = 0, searchRotation = false) => {
       const c1 = document.createElement('canvas');
       const c2 = document.createElement('canvas');
       c1.width = c2.width = size;
       c1.height = c2.height = size;
       const ctx1 = c1.getContext('2d', { willReadFrequently: true });
       const ctx2 = c2.getContext('2d', { willReadFrequently: true });
-      if (!ctx1 || !ctx2) return { x: 0, y: 0 };
+      if (!ctx1 || !ctx2) return { x: 0, y: 0, rot: 0 };
 
-      const draw = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, ox: number, oy: number) => {
+      const draw = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, ox: number, oy: number, rot = 0) => {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, size, size);
+        ctx.save();
+        if (rot !== 0) {
+          ctx.translate(size/2 + ox, size/2 + oy);
+          ctx.rotate(rot * Math.PI / 180);
+          ctx.translate(-(size/2 + ox), -(size/2 + oy));
+        }
         const s = Math.min(size / img.width, size / img.height);
         ctx.drawImage(img, (size - img.width * s) / 2 + ox, (size - img.height * s) / 2 + oy, img.width * s, img.height * s);
+        ctx.restore();
       };
 
       draw(ctx1, imgRef, 0, 0);
       const d1 = ctx1.getImageData(0, 0, size, size).data;
-      let bx = sx, by = sy, me = Infinity;
+      
+      // Calculate mean intensity for normalization (lighting robustness)
+      let m1 = 0, cnt = 0;
+      for (let i = 0; i < d1.length; i += 16) { m1 += d1[i]; cnt++; }
+      m1 /= cnt;
 
-      for (let y = sy - range; y <= sy + range; y++) {
-        for (let x = sx - range; x <= sx + range; x++) {
-          draw(ctx2, imgAct, x, y);
-          const d2 = ctx2.getImageData(0, 0, size, size).data;
-          let e = 0;
-          for (let i = 0; i < d2.length; i += 16) {
-            const d = d1[i] - d2[i];
-            e += d * d;
+      let bx = sx, by = sy, brot = 0, me = Infinity;
+
+      // Small rotation search only on the first level for performance
+      const rotations = searchRotation ? [-3, -1.5, 0, 1.5, 3] : [0];
+
+      for (const rot of rotations) {
+        for (let y = sy - range; y <= sy + range; y++) {
+          for (let x = sx - range; x <= sx + range; x++) {
+            draw(ctx2, imgAct, x, y, rot);
+            const d2 = ctx2.getImageData(0, 0, size, size).data;
+            
+            let m2 = 0;
+            for (let i = 0; i < d2.length; i += 16) m2 += d2[i];
+            m2 /= cnt;
+            const diffM = m1 - m2;
+
+            let e = 0;
+            for (let i = 0; i < d2.length; i += 16) {
+              const d = (d1[i]) - (d2[i] + diffM); // Normalize by mean intensity
+              e += d * d;
+            }
+            if (e < me) { me = e; bx = x; by = y; brot = rot; }
           }
-          if (e < me) { me = e; bx = x; by = y; }
         }
       }
-      return { x: bx, y: by };
+      return { x: bx, y: by, rot: brot };
     };
 
-    const c = alignOnScale(48, 10);
-    const f = alignOnScale(96, 5, c.x * 2, c.y * 2);
+    // Level 1: Coarse search (32px, +/- 12px range, with 3° rotation search)
+    const c = alignOnScale(32, 12, 0, 0, true);
+    // Level 2: Mid search (64px, +/- 6px range)
+    const m = alignOnScale(64, 6, c.x * 2, c.y * 2);
+    // Level 3: Fine search (128px, +/- 4px range)
+    const f = alignOnScale(128, 4, m.x * 2, m.y * 2);
+
+    // detected offset as fraction of world width
+    // (since it was drawn object-contain on a square canvas, 128px maps to refImage.width)
+    const dxRaw = (-f.x / 128) * (refImage.width / worldWidth);
+    const dyRaw = (-f.y / 128) * (refImage.width / worldWidth);
+
+    const totalRotation = refImage.rotation + c.rot;
+    const rad = (totalRotation * Math.PI) / 180;
+    const rotX = (dxRaw * Math.cos(rad) - dyRaw * Math.sin(rad)) * refImage.scale;
+    const rotY = (dxRaw * Math.sin(rad) + dyRaw * Math.cos(rad)) * refImage.scale;
 
     updateActiveImage({
-      xFrac: -f.x / 96,
-      yFrac: -f.y / 96,
-      // Preserve existing scale and rotation
-      rotation: activeImage.rotation,
-      scale: activeImage.scale
+      xFrac: refImage.xFrac + rotX,
+      yFrac: refImage.yFrac + rotY,
+      rotation: totalRotation,
+      scale: refImage.scale
     });
   };
 
@@ -375,16 +414,16 @@ export default function App() {
 
     // 2. Calculate translation to align Q1 with P1 in container space
     // Let's find where P1 is relative to the container center (considering Ref transform)
-    const offPX = (p1.x - refImage.width / 2) / refImage.width;
-    const offPY = (p1.y - refImage.height / 2) / refImage.width;
+    const offPX = (p1.x - refImage.width / 2) / worldWidth;
+    const offPY = (p1.y - refImage.height / 2) / worldWidth;
     
     const radRef = (refImage.rotation * Math.PI) / 180;
     const targetPX = refImage.xFrac + (offPX * Math.cos(radRef) - offPY * Math.sin(radRef)) * refImage.scale;
     const targetPY = refImage.yFrac + (offPX * Math.sin(radRef) + offPY * Math.cos(radRef)) * refImage.scale;
 
     // Now find the relative offset of Q1 in the active image
-    const offQX = (q1.x - activeImage.width / 2) / refImage.width;
-    const offQY = (q1.y - activeImage.height / 2) / refImage.width;
+    const offQX = (q1.x - activeImage.width / 2) / worldWidth;
+    const offQY = (q1.y - activeImage.height / 2) / worldWidth;
     
     const radAct = (newRotation * Math.PI) / 180;
     const rotQX = (offQX * Math.cos(radAct) - offQY * Math.sin(radAct)) * newScale;
@@ -416,10 +455,13 @@ export default function App() {
     const x = (clientX - rect.left) / rect.width;
     const y = (clientY - rect.top) / rect.height;
 
-    if (target === 'ref') {
-      setRefPoints(prev => [...prev, { x, y }]);
-    } else {
-      setActivePoints(prev => [...prev, { x, y }]);
+    // Only add point if it's within bounds
+    if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+      if (target === 'ref') {
+        setRefPoints(prev => [...prev, { x, y }]);
+      } else {
+        setActivePoints(prev => [...prev, { x, y }]);
+      }
     }
   };
 
@@ -486,8 +528,8 @@ export default function App() {
       });
     } else {
       updateActiveImage({
-        xFrac: initialImgPos.x + dx / containerWidth,
-        yFrac: initialImgPos.y + dy / containerWidth,
+        xFrac: initialImgPos.x + dx / (worldWidth * zoomFactor),
+        yFrac: initialImgPos.y + dy / (worldWidth * zoomFactor),
       });
     }
   };
@@ -546,8 +588,8 @@ export default function App() {
       const dx = e.touches[0].clientX - dragStart.x;
       const dy = e.touches[0].clientY - dragStart.y;
       updateActiveImage({
-        xFrac: initialImgPos.x + dx / containerWidth,
-        yFrac: initialImgPos.y + dy / containerWidth,
+        xFrac: initialImgPos.x + dx / (worldWidth * zoomFactor),
+        yFrac: initialImgPos.y + dy / (worldWidth * zoomFactor),
       });
     } else if (e.touches.length === 2 && initialPinch) {
       e.preventDefault();
@@ -1331,25 +1373,28 @@ export default function App() {
                   </span>
                   <span className="text-[10px] text-stone-500">{refImage.width}x{refImage.height}</span>
                 </div>
-                <div 
-                  className="flex-1 bg-black rounded-xl border border-blue-500/30 overflow-hidden relative group cursor-crosshair"
-                  onClick={(e) => addPointAtEvent(e, 'ref')}
-                >
-                  <img 
-                    src={refImage.url} 
-                    alt="Ref" 
-                    className="w-full h-full object-contain pointer-events-none" 
-                  />
-                  {refPoints.map((p, i) => (
-                    <div 
-                      key={`ref-${i}`}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
-                      style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
-                    >
-                      <Crosshair size={20} className="text-blue-500 drop-shadow-lg" />
-                      <span className="absolute -top-5 bg-blue-600 text-white text-[9px] px-1 rounded-full font-bold">R{i+1}</span>
-                    </div>
-                  ))}
+                <div className="flex-1 bg-black rounded-xl border border-blue-500/30 overflow-hidden relative group flex items-center justify-center min-h-0">
+                  <div 
+                    className="relative cursor-crosshair h-full max-w-full"
+                    style={{ aspectRatio: `${refImage.width}/${refImage.height}` }}
+                    onClick={(e) => addPointAtEvent(e, 'ref')}
+                  >
+                    <img 
+                      src={refImage.url} 
+                      alt="Ref" 
+                      className="w-full h-full object-contain pointer-events-none" 
+                    />
+                    {refPoints.map((p, i) => (
+                      <div 
+                        key={`ref-${i}`}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                        style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                      >
+                        <Crosshair size={20} className="text-blue-500 drop-shadow-lg" />
+                        <span className="absolute -top-5 bg-blue-600 text-white text-[9px] px-1 rounded-full font-bold">R{i+1}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1362,25 +1407,28 @@ export default function App() {
                   </span>
                   <span className="text-[10px] text-stone-500">{activeImage.width}x{activeImage.height}</span>
                 </div>
-                <div 
-                  className="flex-1 bg-black rounded-xl border border-emerald-500/30 overflow-hidden relative group cursor-crosshair"
-                  onClick={(e) => addPointAtEvent(e, 'active')}
-                >
-                  <img 
-                    src={activeImage.url} 
-                    alt="Active" 
-                    className="w-full h-full object-contain pointer-events-none" 
-                  />
-                  {activePoints.map((p, i) => (
-                    <div 
-                      key={`active-${i}`}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
-                      style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
-                    >
-                      <Crosshair size={20} className="text-emerald-500 drop-shadow-lg" />
-                      <span className="absolute -top-5 bg-emerald-600 text-white text-[9px] px-1 rounded-full font-bold">E{i+1}</span>
-                    </div>
-                  ))}
+                <div className="flex-1 bg-black rounded-xl border border-emerald-500/30 overflow-hidden relative group flex items-center justify-center min-h-0">
+                  <div 
+                    className="relative cursor-crosshair h-full max-w-full"
+                    style={{ aspectRatio: `${activeImage.width}/${activeImage.height}` }}
+                    onClick={(e) => addPointAtEvent(e, 'active')}
+                  >
+                    <img 
+                      src={activeImage.url} 
+                      alt="Active" 
+                      className="w-full h-full object-contain pointer-events-none" 
+                    />
+                    {activePoints.map((p, i) => (
+                      <div 
+                        key={`active-${i}`}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                        style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                      >
+                        <Crosshair size={20} className="text-emerald-500 drop-shadow-lg" />
+                        <span className="absolute -top-5 bg-emerald-600 text-white text-[9px] px-1 rounded-full font-bold">E{i+1}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1437,13 +1485,13 @@ export default function App() {
                   draggable="false"
                   className="absolute origin-center max-w-none max-h-none cursor-move"
                   style={{
-                    width: `${activeImage.width * (containerWidth / refImage.width)}px`,
-                    height: `${activeImage.height * (containerWidth / refImage.width)}px`,
+                    width: `${activeImage.width * zoomFactor}px`,
+                    height: `${activeImage.height * zoomFactor}px`,
                     left: '50%',
                     top: '50%',
                     transform: `
                       translate(-50%, -50%)
-                      translate(${activeImage.xFrac * containerWidth}px, ${activeImage.yFrac * containerWidth}px) 
+                      translate(${activeImage.xFrac * worldWidth * zoomFactor}px, ${activeImage.yFrac * worldWidth * zoomFactor}px) 
                       scale(${activeImage.scale}) 
                       rotate(${activeImage.rotation}deg)
                     `,
@@ -1462,13 +1510,13 @@ export default function App() {
                   draggable="false"
                   className={`absolute origin-center max-w-none max-h-none ${activeId === refId ? 'cursor-move' : 'pointer-events-none'}`}
                   style={{ 
-                    width: `${refImage.width * (containerWidth / refImage.width)}px`,
-                    height: `${refImage.height * (containerWidth / refImage.width)}px`,
+                    width: `${refImage.width * zoomFactor}px`,
+                    height: `${refImage.height * zoomFactor}px`,
                     left: '50%',
                     top: '50%',
                     transform: `
                       translate(-50%, -50%)
-                      translate(${refImage.xFrac * containerWidth}px, ${refImage.yFrac * containerWidth}px) 
+                      translate(${refImage.xFrac * worldWidth * zoomFactor}px, ${refImage.yFrac * worldWidth * zoomFactor}px) 
                       scale(${refImage.scale}) 
                       rotate(${refImage.rotation}deg)
                     `,
