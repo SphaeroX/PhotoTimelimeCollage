@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Square, Circle, FlipVertical, Target, Crosshair, Trash2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Move, Settings2, Eye, Download, X, GripVertical, Film, Loader2, Layout, RefreshCcw, Crop, Camera, Square, Circle, FlipVertical, Target, Crosshair, Trash2, ZoomIn, Maximize2 } from 'lucide-react';
 
 interface ImageItem {
   id: string;
@@ -48,6 +48,12 @@ export default function App() {
   const [refPoints, setRefPoints] = useState<{x: number, y: number}[]>([]);
   const [activePoints, setActivePoints] = useState<{x: number, y: number}[]>([]);
   const [enablePointScale, setEnablePointScale] = useState(true);
+  
+  // States for point matching zoom/pan UI (not affecting actual image alignment)
+  const [pointMatchZoom, setPointMatchZoom] = useState(1);
+  const [pointMatchPan, setPointMatchPan] = useState({ x: 0, y: 0 });
+  const [isPanningPoints, setIsPanningPoints] = useState(false);
+  const [lastPointPanPos, setLastPointPanPos] = useState({ x: 0, y: 0 });
   
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -443,6 +449,7 @@ export default function App() {
     setRefPoints([]);
     setActivePoints([]);
     setAlignmentMode('manual');
+    resetPointMatchZoom();
   };
 
   const addPointAtEvent = (e: React.MouseEvent | React.TouchEvent, target: 'ref' | 'active') => {
@@ -616,17 +623,52 @@ export default function App() {
   // Add mouse wheel scaling
   const handleEditorWheel = (e: React.WheelEvent) => {
     if (!activeId) return;
-    
+
     const activeImg = images.find((i) => i.id === activeId);
     if (!activeImg) return;
-    
+
     // Determine scale direction
     const scaleDelta = e.deltaY > 0 ? -0.05 : 0.05;
     const newScale = Math.max(0.1, Math.min(10, activeImg.scale + scaleDelta));
-    
+
     updateActiveImage({ scale: newScale });
   };
 
+  const handlePointMatchWheel = (e: React.WheelEvent) => {
+    // Zoom in/out of the point match view
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setPointMatchZoom(prev => Math.max(1, Math.min(10, prev * delta)));
+  };
+
+  const handlePointMatchMouseDown = (e: React.MouseEvent) => {
+    // Start panning if middle mouse button or if it's a drag while zoomed
+    if (e.button === 1 || (e.button === 0 && pointMatchZoom > 1 && e.altKey)) {
+      setIsPanningPoints(true);
+      setLastPointPanPos({ x: e.clientX, y: e.clientY });
+      e.preventDefault();
+    }
+  };
+
+  const handlePointMatchMouseMove = (e: React.MouseEvent) => {
+    if (isPanningPoints) {
+      const dx = e.clientX - lastPointPanPos.x;
+      const dy = e.clientY - lastPointPanPos.y;
+      setPointMatchPan(prev => ({
+        x: prev.x + dx,
+        y: prev.y + dy
+      }));
+      setLastPointPanPos({ x: e.clientX, y: e.clientY });
+    }
+  };
+
+  const handlePointMatchMouseUp = () => {
+    setIsPanningPoints(false);
+  };
+
+  const resetPointMatchZoom = () => {
+    setPointMatchZoom(1);
+    setPointMatchPan({ x: 0, y: 0 });
+  };
   const getAverageBrightness = (ctx: CanvasRenderingContext2D, width: number, height: number, x = 0, y = 0) => {
     const imageData = ctx.getImageData(x, y, width, height);
     const data = imageData.data;
@@ -644,9 +686,14 @@ export default function App() {
     if (!refImgData) return;
 
     const targetRatio = getAspectRatioValue();
-    const baseWidth = refImgData.width * gifResolution;
+    let baseWidth = refImgData.width * gifResolution;
+    
+    // Safety cap: Avoid extremely large exports that crash the browser
+    const MAX_EXPORT_WIDTH = 1280;
+    if (baseWidth > MAX_EXPORT_WIDTH) baseWidth = MAX_EXPORT_WIDTH;
+    
     const outWidth = Math.floor(baseWidth);
-    const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * gifResolution);
+    const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * (outWidth / refImgData.width));
 
     const canvas = document.createElement('canvas');
     canvas.width = outWidth * images.length;
@@ -742,9 +789,14 @@ export default function App() {
     if (!refImgData) return;
     
     const targetRatio = getAspectRatioValue();
-    const baseWidth = refImgData.width * gifResolution;
+    let baseWidth = refImgData.width * gifResolution;
+    
+    // Safety cap: Avoid extremely large exports that crash the browser
+    const MAX_EXPORT_WIDTH = 1280;
+    if (baseWidth > MAX_EXPORT_WIDTH) baseWidth = MAX_EXPORT_WIDTH;
+    
     const outWidth = Math.floor(baseWidth);
-    const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * gifResolution);
+    const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * (outWidth / refImgData.width));
 
     const canvas = document.createElement('canvas');
     canvas.width = outWidth;
@@ -828,7 +880,8 @@ export default function App() {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, outWidth, outHeight);
         drawImageScaled(i, 1);
-        frames.push(canvas.toDataURL('image/jpeg', jpegQuality));
+        // Use PNG if quality is very high (safer for gifshot), otherwise JPEG
+        frames.push(canvas.toDataURL(gifQuality > 8 ? 'image/png' : 'image/jpeg', jpegQuality));
       }
 
       // Fade phase to next image
@@ -838,7 +891,7 @@ export default function App() {
           ctx.fillRect(0, 0, outWidth, outHeight);
           drawImageScaled(i, 1);
           drawImageScaled(i + 1, f / framesCountFade);
-          frames.push(canvas.toDataURL('image/jpeg', jpegQuality));
+          frames.push(canvas.toDataURL(gifQuality > 8 ? 'image/png' : 'image/jpeg', jpegQuality));
         }
       }
     }
@@ -847,27 +900,44 @@ export default function App() {
     // Map 1-10 quality to 20-2 sampleInterval
     const sampleInterval = 22 - (gifQuality * 2);
 
-    // Pass frames to gifshot
-    window.gifshot.createGIF({
-      gifWidth: outWidth,
-      gifHeight: outHeight,
-      images: frames,
-      interval: 1 / fps,
-      numFrames: frames.length,
-      sampleInterval: sampleInterval,
-      progressCallback: (captureProgress: number) => setProgress(captureProgress)
-    }, function(obj: any) {
-      if(!obj.error) {
-        const link = document.createElement('a');
-        link.download = 'timelapse.gif';
-        link.href = obj.image;
-        link.click();
-      } else {
-        alert("Ein Fehler ist bei der GIF Generierung aufgetreten.");
-      }
+    try {
+      // Pass frames to gifshot
+      window.gifshot.createGIF({
+        gifWidth: outWidth,
+        gifHeight: outHeight,
+        images: frames,
+        interval: 1 / fps,
+        sampleInterval: sampleInterval,
+        progressCallback: (captureProgress: number) => {
+          // Keep it at 99% during the heavy lifting to avoid "stuck at 100%" feel
+          setProgress(Math.min(0.99, captureProgress));
+        }
+      }, function(obj: any) {
+        if(!obj.error) {
+          try {
+            const link = document.createElement('a');
+            link.download = 'timelapse.gif';
+            link.href = obj.image;
+            link.click();
+            setProgress(1);
+          } catch (e) {
+            console.error("Link creation error", e);
+            alert("Fehler beim Speichern des GIFs.");
+          }
+        } else {
+          console.error("gifshot error:", obj.error, obj.errorCode, obj.errorMsg);
+          alert(`Ein Fehler ist bei der GIF Generierung aufgetreten: ${obj.errorMsg || 'Unbekannter Fehler'}`);
+        }
+        setIsGenerating(false);
+        // Reset progress after a delay to show 100% briefly
+        setTimeout(() => setProgress(0), 1500);
+      });
+    } catch (err) {
+      console.error("GIF generation crash:", err);
+      alert("Kritischer Fehler bei der GIF-Erstellung. Reduziere ggf. die Auflösung.");
       setIsGenerating(false);
       setProgress(0);
-    });
+    }
   };
 
   const refImage = images.find((i) => i.id === refId);
@@ -1363,71 +1433,100 @@ export default function App() {
               <p>Lade Bilder hoch und setze ein fixes Bild.</p>
             </div>
           ) : alignmentMode === 'points' && activeImage ? (
-            <div className="w-full h-full flex flex-col md:flex-row gap-4 animate-in fade-in zoom-in-95 duration-500">
-              {/* Left Side: Reference Image */}
-              <div className="flex-1 flex flex-col gap-2 min-h-[300px]">
-                <div className="flex justify-between items-center px-2">
-                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                    Referenz (Fix)
-                  </span>
-                  <span className="text-[10px] text-stone-500">{refImage.width}x{refImage.height}</span>
-                </div>
-                <div className="flex-1 bg-black rounded-xl border border-blue-500/30 overflow-hidden relative group flex items-center justify-center min-h-0">
-                  <div 
-                    className="relative cursor-crosshair h-full max-w-full"
-                    style={{ aspectRatio: `${refImage.width}/${refImage.height}` }}
-                    onClick={(e) => addPointAtEvent(e, 'ref')}
-                  >
-                    <img 
-                      src={refImage.url} 
-                      alt="Ref" 
-                      className="w-full h-full object-contain pointer-events-none" 
-                    />
-                    {refPoints.map((p, i) => (
-                      <div 
-                        key={`ref-${i}`}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
-                        style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
-                      >
-                        <Crosshair size={20} className="text-blue-500 drop-shadow-lg" />
-                        <span className="absolute -top-5 bg-blue-600 text-white text-[9px] px-1 rounded-full font-bold">R{i+1}</span>
-                      </div>
-                    ))}
+            <div 
+              className="w-full h-full relative overflow-hidden flex flex-col items-center justify-center p-4 group/pointmode"
+              onWheel={handlePointMatchWheel}
+              onMouseDown={handlePointMatchMouseDown}
+              onMouseMove={handlePointMatchMouseMove}
+              onMouseUp={handlePointMatchMouseUp}
+              onMouseLeave={handlePointMatchMouseUp}
+            >
+              <div 
+                className="w-full h-full flex flex-col md:flex-row gap-4 transition-transform duration-75 ease-out select-none"
+                style={{ 
+                  transform: `scale(${pointMatchZoom}) translate(${pointMatchPan.x / pointMatchZoom}px, ${pointMatchPan.y / pointMatchZoom}px)`,
+                  cursor: isPanningPoints ? 'grabbing' : (pointMatchZoom > 1 ? 'grab' : 'default')
+                }}
+              >
+                {/* Left Side: Reference Image */}
+                <div className="flex-1 flex flex-col gap-2 min-h-[300px]">
+                  <div className="flex justify-between items-center px-2">
+                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                      Referenz (Fix)
+                    </span>
+                    <span className="text-[10px] text-stone-500">{refImage.width}x{refImage.height}</span>
+                  </div>
+                  <div className="flex-1 bg-black rounded-xl border border-blue-500/30 overflow-hidden relative group flex items-center justify-center min-h-0">
+                    <div 
+                      className="relative cursor-crosshair h-full max-w-full"
+                      style={{ aspectRatio: `${refImage.width}/${refImage.height}` }}
+                      onClick={(e) => !isPanningPoints && addPointAtEvent(e, 'ref')}
+                    >
+                      <img 
+                        src={refImage.url} 
+                        alt="Ref" 
+                        className="w-full h-full object-contain pointer-events-none" 
+                      />
+                      {refPoints.map((p, i) => (
+                        <div 
+                          key={`ref-${i}`}
+                          className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                          style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                        >
+                          <Crosshair size={20 / pointMatchZoom} className="text-blue-500 drop-shadow-lg" />
+                          <span 
+                            className="absolute bg-blue-600 text-white px-1 rounded-full font-bold shadow-lg"
+                            style={{ 
+                              top: `-${20 / pointMatchZoom}px`, 
+                              fontSize: `${Math.max(7, 9 / pointMatchZoom)}px`,
+                              padding: `${Math.max(1, 2 / pointMatchZoom)}px`
+                            }}
+                          >R{i+1}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Right Side: Active Image */}
-              <div className="flex-1 flex flex-col gap-2 min-h-[300px]">
-                <div className="flex justify-between items-center px-2">
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                    Edit (Aktiv)
-                  </span>
-                  <span className="text-[10px] text-stone-500">{activeImage.width}x{activeImage.height}</span>
-                </div>
-                <div className="flex-1 bg-black rounded-xl border border-emerald-500/30 overflow-hidden relative group flex items-center justify-center min-h-0">
-                  <div 
-                    className="relative cursor-crosshair h-full max-w-full"
-                    style={{ aspectRatio: `${activeImage.width}/${activeImage.height}` }}
-                    onClick={(e) => addPointAtEvent(e, 'active')}
-                  >
-                    <img 
-                      src={activeImage.url} 
-                      alt="Active" 
-                      className="w-full h-full object-contain pointer-events-none" 
-                    />
-                    {activePoints.map((p, i) => (
-                      <div 
-                        key={`active-${i}`}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
-                        style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
-                      >
-                        <Crosshair size={20} className="text-emerald-500 drop-shadow-lg" />
-                        <span className="absolute -top-5 bg-emerald-600 text-white text-[9px] px-1 rounded-full font-bold">E{i+1}</span>
-                      </div>
-                    ))}
+                {/* Right Side: Active Image */}
+                <div className="flex-1 flex flex-col gap-2 min-h-[300px]">
+                  <div className="flex justify-between items-center px-2">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                      Edit (Aktiv)
+                    </span>
+                    <span className="text-[10px] text-stone-500">{activeImage.width}x{activeImage.height}</span>
+                  </div>
+                  <div className="flex-1 bg-black rounded-xl border border-emerald-500/30 overflow-hidden relative group flex items-center justify-center min-h-0">
+                    <div 
+                      className="relative cursor-crosshair h-full max-w-full"
+                      style={{ aspectRatio: `${activeImage.width}/${activeImage.height}` }}
+                      onClick={(e) => !isPanningPoints && addPointAtEvent(e, 'active')}
+                    >
+                      <img 
+                        src={activeImage.url} 
+                        alt="Active" 
+                        className="w-full h-full object-contain pointer-events-none" 
+                      />
+                      {activePoints.map((p, i) => (
+                        <div 
+                          key={`active-${i}`}
+                          className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                          style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
+                        >
+                          <Crosshair size={20 / pointMatchZoom} className="text-emerald-500 drop-shadow-lg" />
+                          <span 
+                            className="absolute bg-emerald-600 text-white px-1 rounded-full font-bold shadow-lg"
+                            style={{ 
+                              top: `-${20 / pointMatchZoom}px`, 
+                              fontSize: `${Math.max(7, 9 / pointMatchZoom)}px`,
+                              padding: `${Math.max(1, 2 / pointMatchZoom)}px`
+                            }}
+                          >E{i+1}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1443,8 +1542,34 @@ export default function App() {
                       : `Markiere entsprechenden Edit-Punkt E${activePoints.length + 1} im rechten Bild`}
                   </span>
                 </div>
+
+                {/* Zoom Control Group */}
+                <div className="flex items-center gap-4 border-r border-blue-500/30 pr-4">
+                  <div className="flex flex-col">
+                    <span className="font-bold tracking-wide uppercase text-[9px] text-blue-300 opacity-80">Ansicht</span>
+                    <div className="flex items-center gap-2">
+                      <ZoomIn size={14} className="text-blue-300" />
+                      <span className="text-xs font-mono">{Math.round(pointMatchZoom * 100)}%</span>
+                      {pointMatchZoom > 1 && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); resetPointMatchZoom(); }}
+                          className="p-1 bg-blue-700 hover:bg-blue-600 rounded transition-colors"
+                          title="Zoom zurücksetzen"
+                        >
+                          <Maximize2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="hidden lg:flex flex-col text-[8px] text-blue-200/60 leading-tight">
+                    <span>Wheel: Zoom</span>
+                    <span>Mid-Click: Pan</span>
+                    <span>Alt+Drag: Pan</span>
+                  </div>
+                </div>
                 
-                <label className="flex items-center gap-2 cursor-pointer hover:text-blue-200 transition-colors">
+                <label className="flex items-center gap-2 cursor-pointer hover:text-blue-200 transition-colors shrink-0">
                   <div className={`w-8 h-4 rounded-full relative transition-colors ${enablePointScale ? 'bg-emerald-500' : 'bg-stone-600'}`}>
                     <input 
                       type="checkbox" 
