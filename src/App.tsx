@@ -43,6 +43,7 @@ export default function App() {
   const [edgeMaskAmount, setEdgeMaskAmount] = useState(100);
   const [edgeMaskShape, setEdgeMaskShape] = useState<'rect' | 'circle'>('rect');
   const [edgeMaskInvert, setEdgeMaskInvert] = useState(false);
+  const [edgeThreshold, setEdgeThreshold] = useState(0);
   
   const [alignmentMode, setAlignmentMode] = useState<'manual' | 'points'>('manual');
   const [refPoints, setRefPoints] = useState<{x: number, y: number}[]>([]);
@@ -966,7 +967,12 @@ export default function App() {
         <filter id="edge-detect">
           <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
           <feConvolveMatrix order="3 3" preserveAlpha="true" kernelMatrix="-1 -1 -1 -1 8 -1 -1 -1 -1" in="gray" result="edges"/>
-          <feColorMatrix type="matrix" values={`0 0 0 0 ${edgeR}  0 0 0 0 ${edgeG}  0 0 0 0 ${edgeB}  5 0 0 0 0`} in="edges" />
+          <feComponentTransfer in="edges" result="thresholded">
+            <feFuncR type="linear" intercept={-edgeThreshold / 100} />
+            <feFuncG type="linear" intercept={-edgeThreshold / 100} />
+            <feFuncB type="linear" intercept={-edgeThreshold / 100} />
+          </feComponentTransfer>
+          <feColorMatrix type="matrix" values={`0 0 0 0 ${edgeR}  0 0 0 0 ${edgeG}  0 0 0 0 ${edgeB}  5 0 0 0 0`} in="thresholded" />
         </filter>
       </svg>
 
@@ -1338,6 +1344,21 @@ export default function App() {
                       />
                       <span className="text-[10px] font-mono text-stone-400 w-7">{edgeMaskAmount}%</span>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 border-l border-stone-700 pl-3">
+                    <span className="text-[10px] text-stone-400 whitespace-nowrap">Rauschfilter</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={edgeThreshold}
+                      onChange={(e) => setEdgeThreshold(Number(e.target.value))}
+                      className="w-16 sm:w-24 accent-emerald-500"
+                      title={`Rauschfilter: ${edgeThreshold}%`}
+                    />
+                    <span className="text-[10px] font-mono text-stone-400 w-8">{edgeThreshold}%</span>
                   </div>
                 </div>
               )}
