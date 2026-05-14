@@ -256,12 +256,11 @@ export default function App() {
       })
     );
 
-    setImages((prev) => {
-      const updated = [...prev, ...newImages];
-      if (!refId && updated.length > 0) setRefId(updated[0].id);
-      if (!activeId && updated.length > 0) setActiveId(updated[0].id);
-      return updated;
-    });
+    setImages((prev) => [...prev, ...newImages]);
+    if (newImages.length > 0) {
+      setRefId((prev) => prev || newImages[0].id);
+      setActiveId((prev) => prev || newImages[0].id);
+    }
   };
 
   const removeImage = (id: string) => {
@@ -288,12 +287,9 @@ export default function App() {
         scale: 1,
         rotation: 0,
       };
-      setImages((prev) => {
-        const updated = [...prev, newImg];
-        if (!refId) setRefId(newImg.id);
-        setActiveId(newImg.id);
-        return updated;
-      });
+      setImages((prev) => [...prev, newImg]);
+      setActiveId(newImg.id);
+      setRefId((prev) => prev || newImg.id);
       stopCamera();
     }
   };
