@@ -308,6 +308,98 @@ export default function App() {
       });
 
     const [imgRef, imgAct] = await Promise.all([loadImg(refImage.url), loadImg(activeImage.url)]);
+
+    // --- Helper: extract grayscale luminance from ImageData (samples every 4th pixel for speed) ---
+    const extractGrayscale = (data: Uint8ClampedArray, width: number, height: number, step: number): Float32Array => {
+      const n = Math.floor(width * height / step);
+      const gray = new Float32Array(n);
+      let gi = 0;
+      for (let i = 0; i < data.length; i += 4 * step) {
+        gray[gi++] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      }
+      return gray;
+    };
+
+    // --- Helper: apply Laplacian edge-detection kernel [-1,-1,-1,-1,8,-1,-1,-1,-1] on grayscale ---
+    // Returns a Float32Array of edge responses (one per pixel, interior only).
+    const applyLaplacianEdges = (gray: Float32Array, w: number, h: number): Float32Array => {
+      const edges = new Float32Array(w * h);
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const idx = y * w + x;
+          edges[idx] =
+            -gray[(y - 1) * w + (x - 1)] - gray[(y - 1) * w + x] - gray[(y - 1) * w + (x + 1)]
+            -gray[y * w + (x - 1)]       + 8 * gray[idx]        - gray[y * w + (x + 1)]
+            -gray[(y + 1) * w + (x - 1)] - gray[(y + 1) * w + x] - gray[(y + 1) * w + (x + 1)];
+        }
+      }
+      return edges;
+    };
+
+    // --- Helper: threshold edge values – clamp values below threshold to 0 ---
+    const thresholdEdges = (edges: Float32Array, threshold: number): Float32Array => {
+      const result = new Float32Array(edges.length);
+      for (let i = 0; i < edges.length; i++) {
+        result[i] = edges[i] > threshold ? edges[i] : 0;
+      }
+      return result;
+    };
+
+    // --- Helper: compute gradient magnitude using Sobel operator ---
+    const computeGradientMagnitude = (gray: Float32Array, w: number, h: number): Float32Array => {
+      const mag = new Float32Array(w * h);
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          // Sobel Gx
+          const gx =
+            -gray[(y - 1) * w + (x - 1)] + gray[(y - 1) * w + (x + 1)]
+            - 2 * gray[y * w + (x - 1)]   + 2 * gray[y * w + (x + 1)]
+            - gray[(y + 1) * w + (x - 1)] + gray[(y + 1) * w + (x + 1)];
+          // Sobel Gy
+          const gy =
+            -gray[(y - 1) * w + (x - 1)] - 2 * gray[(y - 1) * w + x] - gray[(y - 1) * w + (x + 1)]
+            + gray[(y + 1) * w + (x - 1)] + 2 * gray[(y + 1) * w + x] + gray[(y + 1) * w + (x + 1)];
+          mag[y * w + x] = Math.sqrt(gx * gx + gy * gy);
+        }
+      }
+      return mag;
+    };
+
+    // --- Helper: build feature array from drawn canvas ---
+    // In edge mode: grayscale -> Laplacian -> threshold.
+    // In gradient mode: grayscale -> Sobel gradient magnitude.
+    const buildFeatures = (ctx: CanvasRenderingContext2D, size: number): Float32Array => {
+      const imageData = ctx.getImageData(0, 0, size, size);
+      const gray = extractGrayscale(imageData.data, size, size, 1);
+
+      if (edgeMode) {
+        const edges = applyLaplacianEdges(gray, size, size);
+        // Map edgeThreshold (0-100) to a sensible edge magnitude threshold.
+        // The SVG filter uses intercept = -edgeThreshold/100, which after the Laplacian
+        // (max ~2040 for 8-bit) corresponds roughly to threshold * 20.4.
+        const thresh = (edgeThreshold / 100) * 20;
+        return thresholdEdges(edges, thresh);
+      } else {
+        return computeGradientMagnitude(gray, size, size);
+      }
+    };
+
+    // --- Helper: compute SSD error between two feature arrays ---
+    const computeError = (f1: Float32Array, f2: Float32Array): number => {
+      let e = 0;
+      for (let i = 0; i < f1.length; i++) {
+        const d = f1[i] - f2[i];
+        e += d * d;
+      }
+      return e;
+    };
+
+    // --- Helper: compute mean of a feature array (for optional normalization) ---
+    const computeMean = (arr: Float32Array): number => {
+      let sum = 0;
+      for (let i = 0; i < arr.length; i++) sum += arr[i];
+      return sum / arr.length;
+    };
     
     const alignOnScale = (size: number, range: number, sx = 0, sy = 0, searchRotation = false) => {
       const c1 = document.createElement('canvas');
@@ -332,13 +424,16 @@ export default function App() {
         ctx.restore();
       };
 
+      // Draw reference image and compute its feature representation
       draw(ctx1, imgRef, 0, 0);
-      const d1 = ctx1.getImageData(0, 0, size, size).data;
-      
-      // Calculate mean intensity for normalization (lighting robustness)
-      let m1 = 0, cnt = 0;
-      for (let i = 0; i < d1.length; i += 16) { m1 += d1[i]; cnt++; }
-      m1 /= cnt;
+      const feat1 = buildFeatures(ctx1, size);
+
+      // In gradient (non-edge) mode, optionally subtract mean for extra lighting robustness.
+      // In edge mode the features are already thresholded/binary-ish, so no mean normalization needed.
+      let refMean = 0;
+      if (!edgeMode) {
+        refMean = computeMean(feat1);
+      }
 
       let bx = sx, by = sy, brot = 0, me = Infinity;
 
@@ -349,18 +444,24 @@ export default function App() {
         for (let y = sy - range; y <= sy + range; y++) {
           for (let x = sx - range; x <= sx + range; x++) {
             draw(ctx2, imgAct, x, y, rot);
-            const d2 = ctx2.getImageData(0, 0, size, size).data;
-            
-            let m2 = 0;
-            for (let i = 0; i < d2.length; i += 16) m2 += d2[i];
-            m2 /= cnt;
-            const diffM = m1 - m2;
+            const feat2 = buildFeatures(ctx2, size);
 
-            let e = 0;
-            for (let i = 0; i < d2.length; i += 16) {
-              const d = (d1[i]) - (d2[i] + diffM); // Normalize by mean intensity
-              e += d * d;
+            let e: number;
+            if (edgeMode) {
+              // Edge features are already thresholded – direct SSD comparison
+              e = computeError(feat1, feat2);
+            } else {
+              // Gradient mode: normalize by mean for lighting robustness
+              const actMean = computeMean(feat2);
+              const diffM = refMean - actMean;
+              let err = 0;
+              for (let i = 0; i < feat2.length; i++) {
+                const d = feat1[i] - (feat2[i] + diffM);
+                err += d * d;
+              }
+              e = err;
             }
+
             if (e < me) { me = e; bx = x; by = y; brot = rot; }
           }
         }
