@@ -110,19 +110,44 @@ function computeMean(arr: Float32Array): number {
   return sum / arr.length;
 }
 
-export async function autoAlignActiveImage(params: AutoAlignParams): Promise<AutoAlignResult | null> {
+// --- Helper: yield control back to the browser event loop ---
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// Number of loop iterations to process before yielding to the event loop.
+const ALIGN_CHUNK_SIZE = 10;
+
+export async function autoAlignActiveImage(
+  params: AutoAlignParams,
+  onProgress?: (percent: number) => void,
+): Promise<AutoAlignResult | null> {
   const { refImage, activeImage, worldWidth, edgeMode, edgeThreshold } = params;
 
   const [imgRef, imgAct] = await Promise.all([loadImg(refImage.url), loadImg(activeImage.url)]);
 
-  const alignOnScale = (
+  // Pre-compute total iterations across all three levels for progress reporting.
+  const levelDefs: { size: number; range: number; searchRotation: boolean }[] = [
+    { size: 32, range: 12, searchRotation: true },
+    { size: 64, range: 6, searchRotation: false },
+    { size: 128, range: 4, searchRotation: false },
+  ];
+  let totalIterations = 0;
+  for (const lv of levelDefs) {
+    const rotCount = lv.searchRotation ? 5 : 1;
+    const sideLen = 2 * lv.range + 1;
+    totalIterations += rotCount * sideLen * sideLen;
+  }
+  let completedIterations = 0;
+
+  const alignOnScale = async (
     size: number,
     range: number,
     sx = 0,
     sy = 0,
     searchRotation = false,
     baseRot = 0,
-  ) => {
+  ): Promise<{ x: number; y: number; rot: number }> => {
     const c1 = document.createElement('canvas');
     const c2 = document.createElement('canvas');
     c1.width = c2.width = size;
@@ -157,6 +182,7 @@ export async function autoAlignActiveImage(params: AutoAlignParams): Promise<Aut
     let bx = sx, by = sy, brot = 0, me = Infinity;
     const rotations = searchRotation ? [-3, -1.5, 0, 1.5, 3] : [0];
 
+    let chunkCounter = 0;
     for (const rot of rotations) {
       for (let y = sy - range; y <= sy + range; y++) {
         for (let x = sx - range; x <= sx + range; x++) {
@@ -178,6 +204,14 @@ export async function autoAlignActiveImage(params: AutoAlignParams): Promise<Aut
           }
 
           if (e < me) { me = e; bx = x; by = y; brot = rot; }
+
+          completedIterations++;
+          chunkCounter++;
+          if (chunkCounter >= ALIGN_CHUNK_SIZE) {
+            chunkCounter = 0;
+            onProgress?.(Math.round((completedIterations / totalIterations) * 100));
+            await yieldToMain();
+          }
         }
       }
     }
@@ -185,11 +219,14 @@ export async function autoAlignActiveImage(params: AutoAlignParams): Promise<Aut
   };
 
   // Level 1: Coarse search (32px, +/- 12px range, with 3° rotation search)
-  const c = alignOnScale(32, 12, 0, 0, true);
+  const c = await alignOnScale(32, 12, 0, 0, true);
   // Level 2: Mid search (64px, +/- 6px range, applying coarse rotation)
-  const m = alignOnScale(64, 6, c.x * 2, c.y * 2, false, c.rot);
+  const m = await alignOnScale(64, 6, c.x * 2, c.y * 2, false, c.rot);
   // Level 3: Fine search (128px, +/- 4px range, applying mid rotation)
-  const f = alignOnScale(128, 4, m.x * 2, m.y * 2, false, m.rot);
+  const f = await alignOnScale(128, 4, m.x * 2, m.y * 2, false, m.rot);
+
+  // Report 100% on completion
+  onProgress?.(100);
 
   // Detected offset as fraction of world width
   const dxRaw = (-f.x / 128) * (refImage.width / worldWidth);

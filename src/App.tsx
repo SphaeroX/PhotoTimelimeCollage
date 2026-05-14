@@ -46,6 +46,8 @@ export default function App() {
   const [fadeTime, setFadeTime] = useState(0.5);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isAligning, setIsAligning] = useState(false);
+  const [alignProgress, setAlignProgress] = useState(0);
   const [gifQuality, setGifQuality] = useState(6);
   const [gifResolution, setGifResolution] = useState(0.5);
 
@@ -145,15 +147,25 @@ export default function App() {
   // ─── Action handlers ──────────────────────────────────────────────────────
   const handleAutoAlign = async () => {
     if (!activeId || !refId || activeId === refId || !activeImage || !refImage) return;
-    const result = await autoAlignActiveImage({
-      refImage,
-      activeImage,
-      worldWidth,
-      edgeMode,
-      edgeThreshold,
-    });
-    if (result) {
-      updateActiveImage(result);
+    setIsAligning(true);
+    setAlignProgress(0);
+    try {
+      const result = await autoAlignActiveImage(
+        {
+          refImage,
+          activeImage,
+          worldWidth,
+          edgeMode,
+          edgeThreshold,
+        },
+        setAlignProgress,
+      );
+      if (result) {
+        updateActiveImage(result);
+      }
+    } finally {
+      setIsAligning(false);
+      setAlignProgress(0);
     }
   };
 
@@ -639,12 +651,21 @@ export default function App() {
 
               <button
                 onClick={handleAutoAlign}
-                disabled={!activeId || activeId === refId}
+                disabled={!activeId || activeId === refId || isAligning}
                 className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-stone-800 disabled:text-stone-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors text-xs font-bold shrink-0 shadow-lg ring-1 ring-emerald-500/50"
                 title="Bild automatisch am Referenzbild ausrichten"
               >
-                <RefreshCcw size={14} />
-                Auto-Align
+                {isAligning ? (
+                  <>
+                    <RefreshCcw size={14} className="animate-spin" />
+                    {alignProgress > 0 ? `${alignProgress}%` : 'Aligning…'}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCcw size={14} />
+                    Auto-Align
+                  </>
+                )}
               </button>
             </>
           )}
