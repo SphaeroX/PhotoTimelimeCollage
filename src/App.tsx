@@ -1409,6 +1409,13 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <Settings2 className="text-stone-400 flex-shrink-0" size={18} />
                 <span className="text-sm font-medium hidden lg:inline">Skalierung:</span>
+                <button
+                  onClick={() => updateActiveImage({ scale: Math.max(0.1, activeImage.scale - 0.01) })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title="-0.01"
+                >
+                  -
+                </button>
                 <input
                   type="range"
                   min="0.1"
@@ -1418,18 +1425,40 @@ export default function App() {
                   onChange={(e) => updateActiveImage({ scale: parseFloat(e.target.value) })}
                   className="w-20 sm:w-24 accent-emerald-500"
                 />
+                <button
+                  onClick={() => updateActiveImage({ scale: Math.min(10, activeImage.scale + 0.01) })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title="+0.01"
+                >
+                  +
+                </button>
               </div>
               <div className="flex items-center gap-2">
                 <RotateCwIcon size={18} className="text-stone-400 flex-shrink-0" />
                 <span className="text-sm font-medium hidden lg:inline">Rotation:</span>
+                <button
+                  onClick={() => updateActiveImage({ rotation: Math.max(-180, activeImage.rotation - 0.01) })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title="-0.01"
+                >
+                  -
+                </button>
                 <input
                   type="range"
                   min="-180"
                   max="180"
+                  step="0.01"
                   value={activeImage.rotation}
                   onChange={(e) => updateActiveImage({ rotation: parseFloat(e.target.value) })}
                   className="w-20 sm:w-24 accent-emerald-500"
                 />
+                <button
+                  onClick={() => updateActiveImage({ rotation: Math.min(180, activeImage.rotation + 0.01) })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title="+0.01"
+                >
+                  +
+                </button>
               </div>
 
               <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
