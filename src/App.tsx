@@ -24,9 +24,23 @@ const ASPECT_RATIOS = [
   { label: '2:3', value: '2:3' },
 ];
 
+interface GifshotResult {
+  error: boolean;
+  errorCode?: string;
+  errorMsg?: string;
+  image?: string;
+}
+
+interface GifshotLib {
+  createGIF: (
+    options: Record<string, unknown>,
+    callback: (obj: GifshotResult) => void
+  ) => void;
+}
+
 declare global {
   interface Window {
-    gifshot: any;
+    gifshot?: GifshotLib;
   }
 }
 
@@ -61,6 +75,10 @@ export default function App() {
   
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const imagesRef = useRef<ImageItem[]>(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
   const [containerWidth, setContainerWidth] = useState(0);
 
   const worldWidth = images.length > 0 ? images[0].width : 1000;
@@ -137,7 +155,25 @@ export default function App() {
     window.addEventListener('resize', updateWidth);
     updateWidth();
     return () => window.removeEventListener('resize', updateWidth);
-  }, [activeId, refId]);
+  }, []);
+
+  // Cleanup: revoke all blob URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      imagesRef.current.forEach((img) => URL.revokeObjectURL(img.url));
+    };
+  }, []);
+
+  // Cleanup: stop camera stream when component unmounts
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      if (video && video.srcObject) {
+        const stream = video.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   const startCamera = async () => {
     setIsCameraActive(true);
@@ -186,12 +222,9 @@ export default function App() {
           scale: 1,
           rotation: 0,
         };
-        setImages((prev) => {
-          const updated = [...prev, newImg];
-          if (!refId) setRefId(newImg.id);
-          setActiveId(newImg.id);
-          return updated;
-        });
+        setImages((prev) => [...prev, newImg]);
+        setRefId((prev) => prev ?? newImg.id);
+        setActiveId(newImg.id);
         stopCamera();
       }
     }, 'image/jpeg', 0.9);
@@ -219,16 +252,19 @@ export default function App() {
       })
     );
     
-    setImages((prev) => {
-      const updated = [...prev, ...newImages];
-      if (!refId && updated.length > 0) setRefId(updated[0].id);
-      if (!activeId && updated.length > 0) setActiveId(updated[0].id);
-      return updated;
-    });
+    setImages((prev) => [...prev, ...newImages]);
+    if (newImages.length > 0) {
+      setRefId((prev) => prev ?? newImages[0].id);
+      setActiveId((prev) => prev ?? newImages[0].id);
+    }
   };
 
   const removeImage = (id: string) => {
-    setImages((prev) => prev.filter((img) => img.id !== id));
+    setImages((prev) => {
+      const img = prev.find((i) => i.id === id);
+      if (img) URL.revokeObjectURL(img.url);
+      return prev.filter((i) => i.id !== id);
+    });
     if (refId === id) setRefId(null);
     if (activeId === id) setActiveId(null);
   };
@@ -412,22 +448,23 @@ export default function App() {
       return sum / arr.length;
     };
     
-    const alignOnScale = (size: number, range: number, sx = 0, sy = 0, searchRotation = false) => {
+    const alignOnScale = (size: number, range: number, sx = 0, sy = 0, searchRotation = false, baseRot = 0) => {
       const c1 = document.createElement('canvas');
       const c2 = document.createElement('canvas');
       c1.width = c2.width = size;
       c1.height = c2.height = size;
       const ctx1 = c1.getContext('2d', { willReadFrequently: true });
       const ctx2 = c2.getContext('2d', { willReadFrequently: true });
-      if (!ctx1 || !ctx2) return { x: 0, y: 0, rot: 0 };
+      if (!ctx1 || !ctx2) return { x: 0, y: 0, rot: baseRot };
 
       const draw = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, ox: number, oy: number, rot = 0) => {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, size, size);
         ctx.save();
-        if (rot !== 0) {
+        const totalRot = baseRot + rot;
+        if (totalRot !== 0) {
           ctx.translate(size/2 + ox, size/2 + oy);
-          ctx.rotate(rot * Math.PI / 180);
+          ctx.rotate(totalRot * Math.PI / 180);
           ctx.translate(-(size/2 + ox), -(size/2 + oy));
         }
         const s = Math.min(size / img.width, size / img.height);
@@ -477,15 +514,15 @@ export default function App() {
           }
         }
       }
-      return { x: bx, y: by, rot: brot };
+      return { x: bx, y: by, rot: baseRot + brot };
     };
 
     // Level 1: Coarse search (32px, +/- 12px range, with 3° rotation search)
     const c = alignOnScale(32, 12, 0, 0, true);
-    // Level 2: Mid search (64px, +/- 6px range)
-    const m = alignOnScale(64, 6, c.x * 2, c.y * 2);
-    // Level 3: Fine search (128px, +/- 4px range)
-    const f = alignOnScale(128, 4, m.x * 2, m.y * 2);
+    // Level 2: Mid search (64px, +/- 6px range, applying coarse rotation)
+    const m = alignOnScale(64, 6, c.x * 2, c.y * 2, false, c.rot);
+    // Level 3: Fine search (128px, +/- 4px range, applying mid rotation)
+    const f = alignOnScale(128, 4, m.x * 2, m.y * 2, false, m.rot);
 
     // detected offset as fraction of world width
     // (since it was drawn object-contain on a square canvas, 128px maps to refImage.width)
@@ -1028,8 +1065,8 @@ export default function App() {
           // Keep it at 99% during the heavy lifting to avoid "stuck at 100%" feel
           setProgress(Math.min(0.99, captureProgress));
         }
-      }, function(obj: any) {
-        if(!obj.error) {
+      }, function(obj: GifshotResult) {
+        if(!obj.error && obj.image) {
           try {
             const link = document.createElement('a');
             link.download = 'timelapse.gif';
@@ -1807,7 +1844,7 @@ export default function App() {
                       checked={enablePointScale}
                       onChange={(e) => setEnablePointScale(e.target.checked)}
                     />
-                    <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${enablePointScale ? 'left-4.5' : 'left-0.5'}`}></div>
+                    <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${enablePointScale ? 'left-[18px]' : 'left-[2px]'}`}></div>
                   </div>
                   <span className="text-[10px] font-bold uppercase tracking-tight">Skalieren</span>
                 </label>
