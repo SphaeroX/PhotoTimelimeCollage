@@ -336,11 +336,24 @@ export default function App() {
       return edges;
     };
 
-    // --- Helper: threshold edge values – clamp values below threshold to 0 ---
+    // --- Helper: threshold edge values exactly like the SVG feComponentTransfer filter ---
+    // The SVG filter uses intercept = -edgeThreshold/100 on normalized 0-1 values.
+    // We replicate this by normalizing edge magnitudes, subtracting the threshold, and clamping to 0.
     const thresholdEdges = (edges: Float32Array, threshold: number): Float32Array => {
+      // Find max absolute edge value for normalization
+      let maxVal = 0;
+      for (let i = 0; i < edges.length; i++) {
+        const abs = Math.abs(edges[i]);
+        if (abs > maxVal) maxVal = abs;
+      }
+      if (maxVal === 0) maxVal = 1; // Avoid division by zero
+
+      const intercept = -threshold; // threshold is already in 0-1 range (edgeThreshold/100)
       const result = new Float32Array(edges.length);
       for (let i = 0; i < edges.length; i++) {
-        result[i] = edges[i] > threshold ? edges[i] : 0;
+        const normalized = Math.abs(edges[i]) / maxVal;
+        const shifted = normalized + intercept;
+        result[i] = shifted > 0 ? shifted : 0;
       }
       return result;
     };
@@ -374,10 +387,8 @@ export default function App() {
 
       if (edgeMode) {
         const edges = applyLaplacianEdges(gray, size, size);
-        // Map edgeThreshold (0-100) to a sensible edge magnitude threshold.
-        // The SVG filter uses intercept = -edgeThreshold/100, which after the Laplacian
-        // (max ~2040 for 8-bit) corresponds roughly to threshold * 20.4.
-        const thresh = (edgeThreshold / 100) * 20;
+        // Match the SVG filter exactly: intercept = -edgeThreshold/100 on normalized values
+        const thresh = edgeThreshold / 100;
         return thresholdEdges(edges, thresh);
       } else {
         return computeGradientMagnitude(gray, size, size);
@@ -1601,16 +1612,6 @@ export default function App() {
                 >
                   +
                 </button>
-                <input
-                  type="number"
-                  min="0.0001"
-                  max="0.1"
-                  step="0.0001"
-                  value={posStep}
-                  onChange={(e) => setPosStep(Math.max(0.0001, parseFloat(e.target.value) || 0.001))}
-                  className="w-14 h-6 text-[10px] text-center rounded bg-stone-800 border border-stone-600 text-stone-200 focus:border-emerald-500 focus:outline-none"
-                  title="Schrittweite Position"
-                />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium hidden lg:inline text-stone-400">Y:</span>
@@ -1628,6 +1629,16 @@ export default function App() {
                 >
                   +
                 </button>
+                <input
+                  type="number"
+                  min="0.0001"
+                  max="0.1"
+                  step="0.0001"
+                  value={posStep}
+                  onChange={(e) => setPosStep(Math.max(0.0001, parseFloat(e.target.value) || 0.001))}
+                  className="w-14 h-6 text-[10px] text-center rounded bg-stone-800 border border-stone-600 text-stone-200 focus:border-emerald-500 focus:outline-none"
+                  title="Schrittweite Position"
+                />
               </div>
 
               <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
