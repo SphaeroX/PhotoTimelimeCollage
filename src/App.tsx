@@ -155,7 +155,7 @@ export default function App() {
     window.addEventListener('resize', updateWidth);
     updateWidth();
     return () => window.removeEventListener('resize', updateWidth);
-  }, []);
+  }, [activeId, refId]);
 
   // Cleanup: revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -222,9 +222,12 @@ export default function App() {
           scale: 1,
           rotation: 0,
         };
-        setImages((prev) => [...prev, newImg]);
-        setRefId((prev) => prev ?? newImg.id);
-        setActiveId(newImg.id);
+        setImages((prev) => {
+          const updated = [...prev, newImg];
+          if (!refId) setRefId(newImg.id);
+          setActiveId(newImg.id);
+          return updated;
+        });
         stopCamera();
       }
     }, 'image/jpeg', 0.9);
@@ -252,11 +255,12 @@ export default function App() {
       })
     );
     
-    setImages((prev) => [...prev, ...newImages]);
-    if (newImages.length > 0) {
-      setRefId((prev) => prev ?? newImages[0].id);
-      setActiveId((prev) => prev ?? newImages[0].id);
-    }
+    setImages((prev) => {
+      const updated = [...prev, ...newImages];
+      if (!refId && updated.length > 0) setRefId(updated[0].id);
+      if (!activeId && updated.length > 0) setActiveId(updated[0].id);
+      return updated;
+    });
   };
 
   const removeImage = (id: string) => {
