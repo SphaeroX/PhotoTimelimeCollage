@@ -314,8 +314,9 @@ export default function App() {
               onClick={startCamera}
               className="bg-stone-700 hover:bg-stone-600 text-emerald-400 p-3 rounded-lg flex justify-center items-center transition-colors"
               title="Foto mit Kamera aufnehmen"
+              aria-label="Foto mit Kamera aufnehmen"
             >
-              <Camera size={20} />
+              <Camera size={20} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -750,14 +751,16 @@ export default function App() {
               <button
                 onClick={stopCamera}
                 className="bg-stone-800 hover:bg-stone-700 text-white p-4 rounded-full transition-colors shadow-lg border border-stone-700"
+                aria-label="Kamera schließen"
               >
-                <X size={24} />
+                <X size={24} aria-hidden="true" />
               </button>
               <button
                 onClick={handleCapturePhoto}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white p-6 rounded-full transition-all hover:scale-105 active:scale-95 shadow-xl ring-4 ring-white/10"
+                aria-label="Foto aufnehmen"
               >
-                <Camera size={32} />
+                <Camera size={32} aria-hidden="true" />
               </button>
             </div>
 

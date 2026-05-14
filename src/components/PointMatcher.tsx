@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { Target, Crosshair, ZoomIn, Maximize2 } from 'lucide-react';
 import type { ImageItem } from '../types';
 
@@ -76,7 +76,7 @@ export default function PointMatcher({
             >
               <img
                 src={refImage.url}
-                alt="Ref"
+                alt="Referenzbild für Punkt-Matching"
                 className="w-full h-full object-contain pointer-events-none"
               />
               {refPoints.map((p, i) => (
@@ -121,7 +121,7 @@ export default function PointMatcher({
             >
               <img
                 src={activeImage.url}
-                alt="Active"
+                alt="Aktives Bild für Punkt-Matching"
                 className="w-full h-full object-contain pointer-events-none"
               />
               {activePoints.map((p, i) => (

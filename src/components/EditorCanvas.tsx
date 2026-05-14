@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { Move, Settings2 } from 'lucide-react';
 import type { ImageItem } from '../types';
 
@@ -124,6 +124,8 @@ export default function EditorCanvas({
       {/* Main editor canvas */}
       <div
         ref={containerRef}
+        role="application"
+        aria-label="Bildeditor: Ziehen zum Bewegen, Rechtsklick zum Rotieren, Mausrad zum Skalieren"
         className="relative bg-black shadow-2xl ring-1 ring-stone-800 overflow-hidden"
         style={{
           width: '100%',
@@ -145,7 +147,7 @@ export default function EditorCanvas({
         {activeImage && (
           <img
             src={activeImage.url}
-            alt="Active"
+            alt="Aktives Bild zur Bearbeitung"
             draggable="false"
             className="absolute origin-center max-w-none max-h-none cursor-move"
             style={{
@@ -170,7 +172,7 @@ export default function EditorCanvas({
         {refImage && (
           <img
             src={refImage.url}
-            alt="Reference"
+            alt="Referenzbild als Overlay"
             draggable="false"
             className={`absolute origin-center max-w-none max-h-none ${
               activeId === refId ? 'cursor-move' : 'pointer-events-none'

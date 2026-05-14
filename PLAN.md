@@ -47,10 +47,9 @@
 ## 🟢 Remaining Tasks (Low Priority / Future Work)
 
 ### 13. God Component Anti-Pattern
-- **Status:** ⏳ Open
-- **File:** `src/App.tsx` (~2000 lines)
-- **Problem:** Everything lives in one component.
-- **Fix:** Extract into hooks and components:
+- **Status:** ✅ Complete
+- **File:** `src/App.tsx` (785 lines, down from ~2000)
+- **Fix:** Extracted into hooks and components:
   - `hooks/useCamera.ts`
   - `hooks/useImageAlignment.ts`
   - `components/ImageList.tsx`
@@ -83,7 +82,7 @@
 - [x] 1. Memory Leak Fix
 - [x] 2. Auto-Align Rotation Fix
 - [x] 3. Tailwind Class Fix
-- [ ] 4. State-in-setState Fix (reverted, needs better solution)
+- [x] 4. State-in-setState Fix
 - [x] 5. Resize Listener Fix
 - [x] 6. Camera Cleanup Fix
 
@@ -96,7 +95,7 @@
 - [x] 12. Collage Canvas Width Cap
 
 ### Low / Future (🟢)
-- [ ] 13. God Component Refactoring
+- [x] 13. God Component Refactoring
 - [ ] 14. Auto-Align Web Worker
 - [ ] 15. Accessibility Improvements
 - [ ] 16. `worldWidth` Declaration Order
