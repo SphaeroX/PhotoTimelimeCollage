@@ -81,6 +81,8 @@ export default function App() {
   }, [images]);
   const [containerWidth, setContainerWidth] = useState(0);
 
+  // worldWidth uses the first uploaded image as the coordinate base unit.
+  // This is intentionally not tied to refId to keep editor coordinates stable.
   const worldWidth = images.length > 0 ? images[0].width : 1000;
   const zoomFactor = containerWidth / worldWidth;
 
@@ -212,7 +214,7 @@ export default function App() {
         const file = new File([blob], `camera_${Date.now()}.jpg`, { type: 'image/jpeg' });
         const url = URL.createObjectURL(file);
         const newImg: ImageItem = {
-          id: Math.random().toString(36).substr(2, 9),
+          id: Math.random().toString(36).slice(2, 11),
           file,
           url,
           width: canvas.width,
@@ -233,16 +235,44 @@ export default function App() {
     }, 'image/jpeg', 0.9);
   };
 
+  const MAX_FILE_SIZE_MB = 20;
+  const MAX_IMAGE_COUNT = 50;
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    
+    // Filter oversized files
+    const oversized = files.filter((f) => f.size > MAX_FILE_SIZE_MB * 1024 * 1024);
+    if (oversized.length > 0) {
+      alert(`${oversized.length} Datei(en) überschreiten das Limit von ${MAX_FILE_SIZE_MB} MB und wurden übersprungen.`);
+    }
+    const validFiles = files.filter((f) => f.size <= MAX_FILE_SIZE_MB * 1024 * 1024);
+    
+    // Enforce max image count
+    const remainingSlots = Math.max(0, MAX_IMAGE_COUNT - images.length);
+    if (remainingSlots === 0) {
+      alert(`Maximale Anzahl von ${MAX_IMAGE_COUNT} Bildern erreicht.`);
+      return;
+    }
+    const filesToProcess = validFiles.slice(0, remainingSlots);
+    if (validFiles.length > remainingSlots) {
+      alert(`Nur die ersten ${remainingSlots} Dateien wurden hinzugefügt (Limit: ${MAX_IMAGE_COUNT} Bilder).`);
+    }
+
     const newImages = await Promise.all(
-      files.map(async (file) => {
+      filesToProcess.map(async (file) => {
         const url = URL.createObjectURL(file);
         const img = new Image();
         img.src = url;
-        await new Promise((res) => (img.onload = res));
+        await new Promise((res, rej) => {
+          img.onload = res;
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            rej(new Error(`Failed to load image: ${file.name}`));
+          };
+        });
         return {
-          id: Math.random().toString(36).substr(2, 9),
+          id: Math.random().toString(36).slice(2, 11),
           file,
           url,
           width: img.naturalWidth,
@@ -780,6 +810,7 @@ export default function App() {
   // Add mouse wheel scaling
   const handleEditorWheel = (e: React.WheelEvent) => {
     if (!activeId) return;
+    e.preventDefault();
 
     const activeImg = images.find((i) => i.id === activeId);
     if (!activeImg) return;
@@ -852,9 +883,14 @@ export default function App() {
     const outWidth = Math.floor(baseWidth);
     const outHeight = Math.floor(targetRatio ? baseWidth / targetRatio : refImgData.height * (outWidth / refImgData.width));
 
+    // Cap total canvas width to avoid browser limits (~8192px is safe)
+    const MAX_TOTAL_WIDTH = 4096;
+    const imagesPerRow = Math.max(1, Math.floor(MAX_TOTAL_WIDTH / outWidth));
+    const rows = Math.ceil(images.length / imagesPerRow);
+
     const canvas = document.createElement('canvas');
-    canvas.width = outWidth * images.length;
-    canvas.height = outHeight;
+    canvas.width = Math.min(outWidth * images.length, outWidth * imagesPerRow);
+    canvas.height = outHeight * rows;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -907,8 +943,10 @@ export default function App() {
         }
       }
 
-      const slotCenterX = i * outWidth + outWidth / 2;
-      const slotCenterY = outHeight / 2;
+      const row = Math.floor(i / imagesPerRow);
+      const col = i % imagesPerRow;
+      const slotCenterX = col * outWidth + outWidth / 2;
+      const slotCenterY = row * outHeight + outHeight / 2;
 
       // Ensure consistent logic with editor scaling
       const realX = imgData.xFrac * outWidth;
@@ -1427,7 +1465,7 @@ export default function App() {
           </div>
 
           {alignmentMode === 'manual' ? (
-            <div className="flex items-center gap-4 animate-in fade-in duration-300">
+            <div className="flex items-center gap-4 transition-opacity duration-300">
               <div className="flex items-center gap-2">
                 <Eye className="text-stone-400 flex-shrink-0" size={18} />
                 <span className="text-sm font-medium hidden sm:inline">Overlay Deckkraft:</span>
@@ -1454,7 +1492,7 @@ export default function App() {
               </label>
 
               {edgeMode && (
-                <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                <div className="flex items-center gap-3 transition-all duration-300">
                   <input 
                     type="color" 
                     value={edgeColor}
@@ -1520,7 +1558,7 @@ export default function App() {
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-4 animate-in fade-in duration-300">
+            <div className="flex items-center gap-4 transition-opacity duration-300">
               <div className="flex items-center gap-3">
                 <span className="text-xs font-medium text-stone-400 hidden lg:inline">Punkt hinzufügen für:</span>
                 <button 
@@ -1803,7 +1841,7 @@ export default function App() {
               </div>
 
               {/* Points Mode Status Bar */}
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-900/90 text-white px-6 py-2.5 rounded-full text-xs border border-blue-500/50 backdrop-blur-md shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-900/90 text-white px-6 py-2.5 rounded-full text-xs border border-blue-500/50 backdrop-blur-md shadow-2xl flex items-center gap-4 z-50 transition-all duration-500">
                 <Target size={18} className="text-blue-300 animate-pulse" />
                 <div className="flex flex-col border-r border-blue-500/30 pr-4">
                   <span className="font-bold tracking-wide uppercase text-[9px] text-blue-300 opacity-80">Nächster Schritt</span>
