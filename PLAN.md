@@ -66,13 +66,12 @@
 - **Fix:** Use Web Workers or chunk processing with `setTimeout`/`requestIdleCallback`.
 
 ### 15. Accessibility
-- **Status:** ⏳ Open
-- **Problem:** Generic `alt` texts, missing ARIA labels.
-- **Fix:** Improve `alt` attributes and add ARIA labels for interactive elements.
+- **Status:** ✅ Complete
+- **Fix:** Added ARIA labels to icon-only buttons (camera, close, capture), `role="application"` and descriptive `aria-label` to the editor canvas, improved `alt` texts for reference/active images, and `aria-hidden` on decorative icons.
 
 ### 16. `worldWidth` calculation
-- **Status:** ⏳ Open / Partially addressed
-- **Note:** Changed back to `images[0]?.width` because `refImage` is declared later in the file (hoisting issue). Could be improved by moving `refImage`/`activeImage` declarations earlier.
+- **Status:** ✅ Complete / By Design
+- **Note:** `worldWidth` intentionally uses `images[0]?.width` (not `refImage?.width`) so that editor coordinates remain stable when the reference image is changed. After refactoring, `refImage` and `activeImage` are derived values and `worldWidth` is declared before them, resolving any ordering concerns.
 
 ---
 
@@ -97,5 +96,5 @@
 ### Low / Future (🟢)
 - [x] 13. God Component Refactoring
 - [ ] 14. Auto-Align Web Worker
-- [ ] 15. Accessibility Improvements
-- [ ] 16. `worldWidth` Declaration Order
+- [x] 15. Accessibility Improvements
+- [x] 16. `worldWidth` Declaration Order
