@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Upload, Image as ImageIcon, Move, Settings2, Eye, X, Camera, RefreshCcw, Target, Crosshair, Trash2 } from 'lucide-react';
 
 import type { ImageItem } from './types';
@@ -109,17 +109,24 @@ export default function App() {
     }
   }, []);
 
-  // Update container width on window resize (bugfix #5: empty deps)
-  useEffect(() => {
+  // Measure container width whenever EditorCanvas appears or resizes
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
     const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
-      }
+      setContainerWidth(element.clientWidth);
     };
-    window.addEventListener('resize', updateWidth);
+
     updateWidth();
-    return () => window.removeEventListener('resize', updateWidth);
-  }, []);
+
+    const resizeObserver = new ResizeObserver(updateWidth);
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [refId]);
 
   // Cleanup: revoke all blob URLs on unmount to prevent memory leaks
   useEffect(() => {
