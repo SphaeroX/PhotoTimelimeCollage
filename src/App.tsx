@@ -44,8 +44,9 @@ export default function App() {
   const [edgeMaskShape, setEdgeMaskShape] = useState<'rect' | 'circle'>('rect');
   const [edgeMaskInvert, setEdgeMaskInvert] = useState(false);
   const [edgeThreshold, setEdgeThreshold] = useState(0);
-  const [scaleStep, setScaleStep] = useState(0.1);
+  const [scaleStep, setScaleStep] = useState(0.01);
   const [rotationStep, setRotationStep] = useState(0.1);
+  const [posStep, setPosStep] = useState(0.001);
   
   const [alignmentMode, setAlignmentMode] = useState<'manual' | 'points'>('manual');
   const [refPoints, setRefPoints] = useState<{x: number, y: number}[]>([]);
@@ -1436,11 +1437,11 @@ export default function App() {
                 </button>
                 <input
                   type="number"
-                  min="0.01"
+                  min="0.001"
                   max="1"
-                  step="0.01"
+                  step="0.001"
                   value={scaleStep}
-                  onChange={(e) => setScaleStep(Math.max(0.01, parseFloat(e.target.value) || 0.1))}
+                  onChange={(e) => setScaleStep(Math.max(0.001, parseFloat(e.target.value) || 0.01))}
                   className="w-12 h-6 text-[10px] text-center rounded bg-stone-800 border border-stone-600 text-stone-200 focus:border-emerald-500 focus:outline-none"
                   title="Schrittweite Skalierung"
                 />
@@ -1481,6 +1482,51 @@ export default function App() {
                   className="w-12 h-6 text-[10px] text-center rounded bg-stone-800 border border-stone-600 text-stone-200 focus:border-emerald-500 focus:outline-none"
                   title="Schrittweite Rotation"
                 />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium hidden lg:inline text-stone-400">X:</span>
+                <button
+                  onClick={() => updateActiveImage({ xFrac: activeImage.xFrac - posStep })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title={`-${posStep}`}
+                >
+                  -
+                </button>
+                <button
+                  onClick={() => updateActiveImage({ xFrac: activeImage.xFrac + posStep })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title={`+${posStep}`}
+                >
+                  +
+                </button>
+                <input
+                  type="number"
+                  min="0.0001"
+                  max="0.1"
+                  step="0.0001"
+                  value={posStep}
+                  onChange={(e) => setPosStep(Math.max(0.0001, parseFloat(e.target.value) || 0.001))}
+                  className="w-14 h-6 text-[10px] text-center rounded bg-stone-800 border border-stone-600 text-stone-200 focus:border-emerald-500 focus:outline-none"
+                  title="Schrittweite Position"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium hidden lg:inline text-stone-400">Y:</span>
+                <button
+                  onClick={() => updateActiveImage({ yFrac: activeImage.yFrac - posStep })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title={`-${posStep}`}
+                >
+                  -
+                </button>
+                <button
+                  onClick={() => updateActiveImage({ yFrac: activeImage.yFrac + posStep })}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs font-bold transition-colors"
+                  title={`+${posStep}`}
+                >
+                  +
+                </button>
               </div>
 
               <div className="h-6 w-px bg-stone-700 mx-1 hidden lg:block"></div>
