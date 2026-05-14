@@ -12,7 +12,7 @@
 - ✅ Fixed: Replaced `left-4.5`/`left-0.5` with `left-[18px]`/`left-[2px]`
 
 ### 4. Setting state inside `setState` callback
-- ⚠️ Partially reverted: Original pattern restored to avoid image loading issues. Needs investigation for proper fix.
+- ✅ Fixed: State setters are now called outside the functional update, using updater functions (`setRefId((prev) => prev || id)`) to avoid stale closures.
 
 ### 5. Resize listener re-registers unnecessarily
 - ✅ Fixed: Empty dependency array `[]`
@@ -44,7 +44,7 @@
 
 ---
 
-## 🟢 Remaining Tasks (Low Priority / Future Work)
+## 🟢 Completed Tasks (Low Priority / Future Work)
 
 ### 13. God Component Anti-Pattern
 - **Status:** ✅ Complete
@@ -60,10 +60,8 @@
   - `utils/export.ts`
 
 ### 14. Auto-Align blocks main thread
-- **Status:** ⏳ Open
-- **File:** `src/App.tsx` → `autoAlignActiveImage()`
-- **Problem:** Synchronous heavy computation freezes UI during alignment.
-- **Fix:** Use Web Workers or chunk processing with `setTimeout`/`requestIdleCallback`.
+- **Status:** ✅ Complete
+- **Fix:** Converted `alignOnScale()` to async chunked processing (`setTimeout(0)` yield every 10 iterations). Added progress callback so the UI shows a spinner + percentage during alignment. The computation logic itself is unchanged.
 
 ### 15. Accessibility
 - **Status:** ✅ Complete
@@ -95,6 +93,6 @@
 
 ### Low / Future (🟢)
 - [x] 13. God Component Refactoring
-- [ ] 14. Auto-Align Web Worker
+- [x] 14. Auto-Align Web Worker
 - [x] 15. Accessibility Improvements
 - [x] 16. `worldWidth` Declaration Order
